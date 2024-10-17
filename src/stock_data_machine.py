@@ -306,6 +306,6 @@ class Stocks:
         print(f"Stock data stats summary saved to {FILE_DROP_DIR_PATH}/stock_data_stats_{now}.csv")
         return comprehensive_summary
     
-stocks = Stocks(valid_tickers)
+# stocks = Stocks(valid_tickers)
 
-
+Stocks(valid_tickers)
