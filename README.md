@@ -1,34 +1,165 @@
-# Overview
-This script generates 3 detailed reports on historical data and performance trends for stocks in a specified watchlist in the .env file.
-The three files rendered are:
-1. all company info available from yfinance for each stock in the watchlist.
-2. historical data for each stock in the watchlist dating back to 2010.
-3. a data table with the following columns for each stock in the watchlist (for buy/sell/hold analysis and use with ML models):
-    '''symbol,trade_signal,macd_signal,rsi,macd,last closing_price,last_opening_price,bollinger_upper,bollinger_lower,last_trading_day_change_$,last_trading_day_change_%,change_2d_$,change_2d_%,change_3d_$,change_3d_%,change_4d_$,change_4d_%,change_5d_$,change_5d_%,change_6d_$,change_6d_%,change_7d_$,change_7d_%,change_8d_$,change_8d_%,change_9d_$,change_9d_%,change_10d_$,change_10d_%,change_11d_$,change_11d_%,change_12d_$,change_12d_%,change_13d_$,change_13d_%,change_14d_$,change_14d_%,change_30d_$,change_30d_%,change_60d_$,change_60d_%,change_90d_$,change_90d_%,change_180d_$,change_180d_%,change_365d_$,change_365d_%,change_730d_$,change_730d_%,change_1095d_$,change_1095d_%,change_1460d_$,change_1460d_%,change_1825d_$,change_1825d_%,change_3650d_$,change_3650d_%,last_trading_day_high,last_trading_day_low,3_day_high,3_day_low,4_day_high,4_day_low,5_day_high,5_day_low,6_day_high,6_day_low,7_day_high,7_day_low,8_day_high,8_day_low,9_day_high,9_day_low,10_day_high,10_day_low,11_day_high,11_day_low,12_day_high,12_day_low,13_day_high,13_day_low,14_day_high,14_day_low,21_day_high,21_day_low,30_day_high,30_day_low,60_day_high,60_day_low,90_day_high,90_day_low,180_day_high,180_day_low,365_day_high,365_day_low,730_day_high,730_day_low,1095_day_high,1095_day_low,1460_day_high,1460_day_low,1825_day_high,1825_day_low,3650_day_high,3650_day_low,moving_average_03,moving_average_04,moving_average_05,moving_average_06,moving_average_07,moving_average_08,moving_average_09,moving_average_10,moving_average_11,moving_average_12,moving_average_13,moving_average_14,moving_average_21,moving_average_30,moving_average_40,moving_average_50,moving_average_60,moving_average_100,moving_average_200,moving_average_300,volume_trend_03d,volume_trend_04d,volume_trend_05d,volume_trend_06d,volume_trend_07d,volume_trend_08d,volume_trend_09d,volume_trend_10d,volume_trend_11d,volume_trend_12d,volume_trend_13d,volume_trend_14d,volume_trend_21d,volume_trend_30d,volume_trend_40d,volume_trend_50d,volume_trend_60d,volume_trend_90d,atr_2d,atr_3d,atr_4d,atr_5d,atr_6d,atr_7d,atr_8d,atr_9d,atr_10d,atr_11d,atr_12d,atr_13d,atr_14d,atr_21,atr_30d,atr_60d,atr_90d,atr_180d,eps,pe_ratio,dividend_yield'''
+# Stock Analytics Lakehouse
 
-# Features
-Analyzes historical data of selected stocks.
-Evaluates time-series performance for each stock in the watchlist.
-Allows customization of the watchlist based on user preferences.
-Saves reports automatically for user convenience.
+Production-grade Databricks lakehouse for equity screening and investment
+decision support — Delta Lake, Unity Catalog, and Declarative Automation Bundles.
 
-# Setup
-Requirements
-Python 3.11
-pip
+<p align="center">
+  <img src="static-assets/stock-dashboard.png" alt="Stock Dashboard" width="700">
+</p>
 
-# Installation Steps
-Clone or download the script to your local system.
-Install necessary dependencies:
+Live Databricks dashboard showing composite-ranked watchlist with RSI, MACD,
+Bollinger Bands, and fundamental signals across 20 tickers.
+
+<p align="center">
+  <img src="static-assets/databricks-sql.png" alt="Databricks SQL Editor" width="700">
+</p>
+
+Query the Gold layer directly from the Databricks SQL Editor.
+
+<p align="center">
+  <img src="static-assets/deployment.png" alt="Databricks Deployment" width="700">
+</p>
+
+Pipeline deployed and running end-to-end on Databricks Free Edition.
+
+---
+
+## Architecture
+
+**Medallion architecture**: Bronze (raw) → Silver (features) → Gold (analytics)
+
+- **No notebooks** — all Python scripts deployed via Databricks Asset Bundles (DABs)
+- **Serverless compute** on Databricks Free Edition
+- **Unity Catalog** for governance and table access control
+- **CI/CD** via GitHub Actions (test → validate → deploy)
+
+```
+setup_catalog
+    ├── ingest_prices ──────┐
+    └── ingest_fundamentals ┤
+                    build_silver
+                        └── build_gold
+```
+
+## Databricks Stack
+
+| Component | Detail |
+|-----------|--------|
+| **Platform** | Databricks Free Edition |
+| **Compute** | Serverless (environment v3) |
+| **Catalog** | Unity Catalog (`stock_analytics`) |
+| **Deployment** | DABs (`databricks bundle deploy`) |
+| **Orchestration** | Databricks Jobs (Mon-Fri 10pm ET) |
+| **Storage** | Delta Lake tables |
+| **Dashboard** | Built-in Databricks SQL dashboard |
+
+## Tables
+
+| Layer | Table | Write Mode | Description |
+|-------|-------|------------|-------------|
+| Bronze | `stock_analytics.bronze.daily_prices` | overwrite | OHLCV price history (adjusted) |
+| Bronze | `stock_analytics.bronze.company_fundamentals` | overwrite | Curated fundamentals (typed) |
+| Silver | `stock_analytics.silver.daily_signals` | idempotent append | Technical indicators + fundamentals |
+| Gold | `stock_analytics.gold.watchlist_ranked` | replace | Ranked watchlist with composite scores |
+| Gold | `stock_analytics.gold.signal_history` | replace | Signal time series for dashboards |
+| Gold | `stock_analytics.gold.trade_log` | manual | Trade journal (INSERT via SQL editor) |
+
+## Quick Start
+
+### Prerequisites
+
+- Databricks CLI (`brew install databricks`)
+- Terraform (`brew install terraform`)
+- Python 3.11+
+
+### 1. Authenticate
+
+```bash
+databricks auth login --host https://YOUR_WORKSPACE.cloud.databricks.com
+```
+
+### 2. Configure
+
+Edit `databricks.yml` — set your workspace host.
+
+Edit `src/common/config.py` — set your ticker watchlist.
+
+### 3. Deploy & Run
+
+```bash
+# Deploy the bundle
+DATABRICKS_TF_EXEC_PATH=$(which terraform) \
+DATABRICKS_TF_VERSION=$(terraform version -json | jq -r '.terraform_version') \
+databricks bundle deploy
+
+# Run the pipeline
+databricks bundle run stock_analytics_pipeline
+```
+
+### 4. Query
+
+Open the Databricks SQL Editor and run:
+
+```sql
+-- Top 10 stocks by composite rank
+SELECT symbol, trade_signal, rsi, pe_ratio, change_30d_pct,
+       composite_rank, last_closing_price
+FROM stock_analytics.gold.watchlist_ranked
+ORDER BY composite_rank ASC
+LIMIT 10;
+
+-- Current Buy signals
+SELECT symbol, rsi, macd, last_closing_price
+FROM stock_analytics.gold.watchlist_ranked
+WHERE trade_signal = 'Buy';
+
+-- Signal history for a ticker
+SELECT as_of_date, trade_signal, rsi, macd, last_closing_price
+FROM stock_analytics.gold.signal_history
+WHERE symbol = 'AAPL'
+ORDER BY as_of_date DESC;
+```
+
+## Local Development
+
+```bash
+python -m venv stocks-venv && source stocks-venv/bin/activate
 pip install -r requirements.txt
+pytest tests/ -v
+```
 
-# Configuration
-Define your stock watchlist in an environment variable USER_STOCK_WATCH_LIST, formatted as a comma-separated list of stock symbols.
+## Trade Logging
 
-# Execution
-Run the script from your command line within the script's directory.
+```sql
+INSERT INTO stock_analytics.gold.trade_log VALUES (
+    '2026-04-21', 'AAPL', 'BUY', 10, 195.50, 1955.00,
+    'RSI oversold, composite rank #3', 'Buy', 28.4, 24.1, NULL
+);
+```
 
-# Output
-Reports are saved in a designated directory, typically app_generated_files within the project structure, with timestamps for easy reference.
+Track P&L against current prices:
 
-For more information on usage and customization, refer to the inline comments within the script.
+```sql
+SELECT t.symbol, t.price AS entry, w.last_closing_price AS current,
+       ROUND(((w.last_closing_price - t.price) / t.price) * 100, 2) AS return_pct
+FROM stock_analytics.gold.trade_log t
+JOIN stock_analytics.gold.watchlist_ranked w ON t.symbol = w.symbol
+WHERE t.action = 'BUY';
+```
+
+## Schedule
+
+Pipeline runs Mon-Fri at 10pm ET (after market close).
+
+## Indicators
+
+| Indicator | Column | Description |
+|-----------|--------|-------------|
+| RSI (14-day) | `rsi` | Relative Strength Index |
+| MACD | `macd`, `macd_signal_line` | Moving Average Convergence/Divergence |
+| Bollinger Bands | `bollinger_upper`, `bollinger_lower` | 20-day ± 2σ |
+| ATR (14-day) | `atr_14d` | Average True Range |
+| Moving Averages | `ma_50`, `ma_200` | 50-day and 200-day SMA |
+| Price Change | `change_30d_pct`, `change_90d_pct`, `change_365d_pct` | Momentum |
+| Fundamentals | `eps`, `pe_ratio`, `dividend_yield` | From yfinance |
+| Composite Rank | `composite_rank` | RSI + value + momentum rank sum |
