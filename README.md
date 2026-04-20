@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="static-assets/stock-dashboard.png" alt="Stock Analytics Dashboard" width="700">
-</p>
-
 <h1 align="center">Stock Analytics Lakehouse</h1>
 
 <p align="center">
@@ -20,6 +16,10 @@
 </p>
 
 ---
+
+<p align="center">
+  <img src="static-assets/stock-dashboard.png" alt="Stock Analytics Dashboard" width="700">
+</p>
 
 <p align="center">
   <img src="static-assets/databricks-sql.png" alt="Databricks SQL Editor" width="700"><br>
