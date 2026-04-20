@@ -2,7 +2,11 @@
 Bronze layer: Ingest daily OHLCV price data from yfinance.
 Writes to stock_analytics.bronze.daily_prices as a Delta table.
 
-Mode: OVERWRITE (full refresh each run).
+Mode: APPEND (immutable evidence — never overwrite).
+Each row carries point-in-time metadata:
+  _run_id, _ingest_ts, _source_system, _source_event_ts, _load_type
+
+Deduplication happens in Silver (MERGE on symbol + date).
 """
 import sys
 import os
@@ -20,6 +24,7 @@ from pyspark.sql.types import (
     StructType, StructField, StringType, DoubleType, LongType, DateType
 )
 from common.config import TICKERS, TABLE_BRONZE_PRICES, HISTORY_START_DATE
+from common.run_context import new_run_id, now_ts, source_event_ts, SOURCE_SYSTEM, LOAD_TYPE
 
 
 PRICE_SCHEMA = StructType([
@@ -30,13 +35,20 @@ PRICE_SCHEMA = StructType([
     StructField("close", DoubleType(), True),
     StructField("volume", LongType(), True),
     StructField("symbol", StringType(), False),
+    # Point-in-time metadata
+    StructField("_run_id", StringType(), False),
+    StructField("_ingest_ts", StringType(), False),
+    StructField("_source_system", StringType(), False),
+    StructField("_source_event_ts", StringType(), False),
+    StructField("_load_type", StringType(), False),
 ])
 
 
-def download_single_ticker(ticker: str) -> pd.DataFrame | None:
+def download_single_ticker(ticker: str, run_id: str, ingest_ts: str) -> pd.DataFrame | None:
     """
     Download OHLCV for a single ticker. Returns a clean DataFrame
-    with lowercase columns and a 'symbol' column, or None on failure.
+    with lowercase columns, a 'symbol' column, and PIT metadata,
+    or None on failure.
     """
     try:
         df = yf.download(
@@ -72,8 +84,22 @@ def download_single_ticker(ticker: str) -> pd.DataFrame | None:
         df.index.name = "date"
         df = df.reset_index()
         df["date"] = pd.to_datetime(df["date"]).dt.date
-        df["volume"] = df["volume"].fillna(0).astype("int64")
-        df = df[["date", "open", "high", "low", "close", "volume", "symbol"]]
+
+        # Preserve NaN as NULL — zero and missing are semantically different.
+        # Volume NaN means "no data", not "0 shares traded".
+        # (Previously fillna(0) — this was wrong for quality tracking.)
+        df["volume"] = df["volume"].astype("Int64")  # nullable integer
+
+        # Point-in-time metadata columns
+        df["_run_id"] = run_id
+        df["_ingest_ts"] = ingest_ts
+        df["_source_system"] = SOURCE_SYSTEM
+        # _source_event_ts = the trade date (when the market event occurred)
+        df["_source_event_ts"] = df["date"].apply(lambda d: source_event_ts(d))
+        df["_load_type"] = LOAD_TYPE
+
+        df = df[["date", "open", "high", "low", "close", "volume", "symbol",
+                 "_run_id", "_ingest_ts", "_source_system", "_source_event_ts", "_load_type"]]
 
         return df
 
@@ -85,11 +111,16 @@ def download_single_ticker(ticker: str) -> pd.DataFrame | None:
 def main():
     spark = SparkSession.builder.getOrCreate()
 
+    run_id = new_run_id()
+    ingest_ts = now_ts()
+
+    print(f"[ingest_prices] Run ID: {run_id}")
+    print(f"[ingest_prices] Ingest TS: {ingest_ts}")
     print(f"[ingest_prices] Downloading data for {len(TICKERS)} tickers...")
 
     frames = []
     for i, ticker in enumerate(TICKERS):
-        df = download_single_ticker(ticker)
+        df = download_single_ticker(ticker, run_id, ingest_ts)
         if df is not None:
             frames.append(df)
             print(f"[ingest_prices] ({i+1}/{len(TICKERS)}) {ticker}: {len(df)} rows")
@@ -113,25 +144,37 @@ def main():
     print(f"[ingest_prices] Total rows: {len(bronze_df)}")
     print(f"[ingest_prices] Date range: {bronze_df['date'].min()} to {bronze_df['date'].max()}")
 
+    # Quality checks
+    from common.quality import check_bronze_prices
+    issues = check_bronze_prices(bronze_df)
+    for issue in issues:
+        print(f"[ingest_prices] QUALITY: {issue}")
+
     # Cast dtypes for Spark compatibility
     # Keep date as string for Row serialization, cast via Spark SQL after
     bronze_df["date"] = pd.to_datetime(bronze_df["date"]).dt.strftime("%Y-%m-%d")
-    bronze_df["volume"] = bronze_df["volume"].astype("int64")
+    # Volume: nullable int → float for Row serialization (Spark LongType handles NULL)
+    bronze_df["volume"] = bronze_df["volume"].astype("float64")
     for col in ["open", "high", "low", "close"]:
         bronze_df[col] = bronze_df[col].astype("float64")
     bronze_df["symbol"] = bronze_df["symbol"].astype(str)
 
     # Use Row-based createDataFrame to bypass PySpark Connect ChunkedArray bug
     from pyspark.sql import Row
-    rows = [Row(**row.to_dict()) for _, row in bronze_df.iterrows()]
+    rows = [Row(**{k: (None if pd.isna(v) else v) for k, v in row.items()})
+            for _, row in bronze_df.iterrows()]
     spark_df = spark.createDataFrame(rows)
-    # Cast date string column to proper date type
+    # Cast date string column to proper date type, volume to long
     spark_df = spark_df.selectExpr(
         "CAST(date AS DATE) as date",
-        "open", "high", "low", "close", "volume", "symbol"
+        "open", "high", "low", "close",
+        "CAST(volume AS LONG) as volume",
+        "symbol",
+        "_run_id", "_ingest_ts", "_source_system", "_source_event_ts", "_load_type"
     )
-    spark_df.write.mode("overwrite").saveAsTable(TABLE_BRONZE_PRICES)
-    print(f"[ingest_prices] Written to {TABLE_BRONZE_PRICES}")
+    # APPEND — Bronze stores evidence, not truth. Never overwrite.
+    spark_df.write.mode("append").option("mergeSchema", "true").saveAsTable(TABLE_BRONZE_PRICES)
+    print(f"[ingest_prices] Appended {len(bronze_df)} rows to {TABLE_BRONZE_PRICES}")
 
 
 if __name__ == "__main__":
