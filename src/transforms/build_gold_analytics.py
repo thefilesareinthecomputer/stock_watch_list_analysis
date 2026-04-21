@@ -119,6 +119,9 @@ def main():
     print(f"[build_gold] Created/replaced {TABLE_GOLD_WATCHLIST}")
 
     # ── 2. Signal alerts ─────────────────────────────────────
+    # Alerts use signal_history (full time series) for LAG-based crossover detection.
+    # RSI alerts use latest snapshot (no LAG needed).
+    # MACD/Bollinger/MA200 alerts use signal_history LAG partitioned by symbol.
     spark.sql(f"""
         CREATE OR REPLACE TABLE {TABLE_GOLD_SIGNAL_ALERTS} AS
         WITH latest AS (
@@ -129,27 +132,36 @@ def main():
                 FROM {TABLE_SILVER_SIGNALS}
             )
         ),
-        -- Window functions must be in SELECT, not WHERE — use CTEs
+        -- MACD crossover: histogram flips sign between consecutive days
         macd_lag AS (
             SELECT symbol, as_of_date, macd_histogram,
                    LAG(macd_histogram) OVER (PARTITION BY symbol ORDER BY as_of_date) AS prev_macd_hist
-            FROM latest
+            FROM {TABLE_SILVER_SIGNALS}
             WHERE macd_histogram IS NOT NULL
         ),
+        -- MA200 crossover: price crosses above/below 200-day MA
         ma200_lag AS (
             SELECT symbol, as_of_date, last_closing_price, ma_200,
                    LAG(last_closing_price) OVER (PARTITION BY symbol ORDER BY as_of_date) AS prev_close,
                    LAG(ma_200) OVER (PARTITION BY symbol ORDER BY as_of_date) AS prev_ma200
-            FROM latest
+            FROM {TABLE_SILVER_SIGNALS}
             WHERE ma_200 IS NOT NULL
         ),
-        bollinger_min AS (
-            SELECT MIN(bollinger_bandwidth) AS min_bw
-            FROM {TABLE_SILVER_SIGNALS}
-            WHERE as_of_date >= DATE_SUB((SELECT MAX(as_of_date) FROM {TABLE_SILVER_SIGNALS}), 126)
-              AND bollinger_bandwidth IS NOT NULL
+        -- Bollinger squeeze: bandwidth is in the bottom 10th percentile
+        -- of the last 126 trading days for that specific symbol
+        bollinger_pct AS (
+            SELECT h.symbol, h.as_of_date, h.bollinger_bandwidth,
+                   PERCENT_RANK() OVER (
+                       PARTITION BY h.symbol
+                       ORDER BY h.bollinger_bandwidth
+                   ) AS bw_percentile
+            FROM {TABLE_SILVER_SIGNALS} h
+            WHERE h.as_of_date >= DATE_SUB(
+                       (SELECT MAX(as_of_date) FROM {TABLE_SILVER_SIGNALS}), 126)
+              AND h.bollinger_bandwidth IS NOT NULL
         ),
         alerts AS (
+            -- RSI overbought/oversold (from latest snapshot only)
             SELECT symbol, as_of_date,
                 CASE
                     WHEN rsi < 30 THEN 'RSI_OVERSOLD'
@@ -161,24 +173,27 @@ def main():
 
             UNION ALL
 
+            -- MACD crossover: histogram flips sign (bullish or bearish)
             SELECT m.symbol, m.as_of_date,
                 'MACD_CROSSOVER' AS alert_type,
                 m.macd_histogram AS alert_value
             FROM macd_lag m
-            WHERE SIGN(m.macd_histogram) != SIGN(m.prev_macd_hist)
-              OR (m.prev_macd_hist IS NULL AND m.macd_histogram IS NOT NULL)
+            WHERE m.prev_macd_hist IS NOT NULL
+              AND SIGN(m.macd_histogram) != SIGN(m.prev_macd_hist)
 
             UNION ALL
 
-            SELECT symbol, as_of_date,
+            -- Bollinger squeeze: bandwidth in bottom 10th percentile for symbol
+            SELECT b.symbol, b.as_of_date,
                 'BOLLINGER_SQUEEZE' AS alert_type,
-                bollinger_bandwidth AS alert_value
-            FROM latest, bollinger_min
-            WHERE bollinger_bandwidth IS NOT NULL
-              AND bollinger_bandwidth = bollinger_min.min_bw
+                b.bollinger_bandwidth AS alert_value
+            FROM bollinger_pct b
+            WHERE b.bw_percentile <= 0.10
+              AND b.as_of_date = (SELECT MAX(as_of_date) FROM {TABLE_SILVER_SIGNALS})
 
             UNION ALL
 
+            -- MA200 crossover: price crosses above/below 200-day moving average
             SELECT symbol, as_of_date,
                 CASE
                     WHEN last_closing_price > ma_200 AND prev_close <= prev_ma200
@@ -189,9 +204,11 @@ def main():
                 last_closing_price AS alert_value
             FROM ma200_lag
             WHERE prev_close IS NOT NULL
+              AND as_of_date = (SELECT MAX(as_of_date) FROM {TABLE_SILVER_SIGNALS})
 
             UNION ALL
 
+            -- Dividend yield trap: trailing yield >> forward yield
             SELECT symbol, as_of_date,
                 'DIVIDEND_YIELD_TRAP' AS alert_type,
                 dividend_yield_gap AS alert_value
@@ -254,10 +271,21 @@ def main():
                 FROM {TABLE_SILVER_SIGNALS}
             )
         ),
-        benchmarks AS (
-            SELECT symbol, change_30d_pct, change_90d_pct, change_365d_pct
+        spy_bench AS (
+            SELECT change_30d_pct AS spy_change_30d,
+                   change_90d_pct AS spy_change_90d,
+                   change_365d_pct AS spy_change_365d
             FROM latest
-            WHERE symbol IN ('SPY', 'QQQ')
+            WHERE symbol = 'SPY'
+            LIMIT 1
+        ),
+        qqq_bench AS (
+            SELECT change_30d_pct AS qqq_change_30d,
+                   change_90d_pct AS qqq_change_90d,
+                   change_365d_pct AS qqq_change_365d
+            FROM latest
+            WHERE symbol = 'QQQ'
+            LIMIT 1
         )
         SELECT
             l.symbol,
@@ -266,17 +294,17 @@ def main():
             l.change_30d_pct,
             l.change_90d_pct,
             l.change_365d_pct,
-            spy.change_30d_pct AS spy_change_30d,
-            spy.change_90d_pct AS spy_change_90d,
-            spy.change_365d_pct AS spy_change_365d,
-            qqq.change_30d_pct AS qqq_change_30d,
-            qqq.change_90d_pct AS qqq_change_90d,
-            qqq.change_365d_pct AS qqq_change_365d
+            COALESCE(spy.spy_change_30d, 0) AS spy_change_30d,
+            COALESCE(spy.spy_change_90d, 0) AS spy_change_90d,
+            COALESCE(spy.spy_change_365d, 0) AS spy_change_365d,
+            COALESCE(qqq.qqq_change_30d, 0) AS qqq_change_30d,
+            COALESCE(qqq.qqq_change_90d, 0) AS qqq_change_90d,
+            COALESCE(qqq.qqq_change_365d, 0) AS qqq_change_365d
         FROM latest l
-        CROSS JOIN (SELECT change_30d_pct, change_90d_pct, change_365d_pct FROM benchmarks WHERE symbol = 'SPY') spy
-        CROSS JOIN (SELECT change_30d_pct, change_90d_pct, change_365d_pct FROM benchmarks WHERE symbol = 'QQQ') qqq
+        LEFT JOIN spy_bench spy
+        LEFT JOIN qqq_bench qqq
         WHERE l.symbol NOT IN ('SPY', 'QQQ')
-        ORDER BY l.change_365d_pct DESC
+        ORDER BY l.change_365d_pct DESC NULLS LAST
     """)
     print(f"[build_gold] Created/replaced {TABLE_GOLD_BENCHMARK_COMPARE}")
 

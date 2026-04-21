@@ -74,7 +74,6 @@ def main():
                     ON bf.symbol = sd.symbol
                     AND bf.effective_from <= CAST(sd.as_of_date AS STRING)
                     AND (bf.effective_to IS NULL OR bf.effective_to > CAST(sd.as_of_date AS STRING))
-                WHERE bf.is_current = true
             )
             SELECT * FROM pit
             ORDER BY symbol, as_of_date

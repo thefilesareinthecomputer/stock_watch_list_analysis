@@ -7,73 +7,153 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Python-3.11+-blue.svg" alt="Python">
   <img src="https://img.shields.io/badge/Databricks-Free%20Edition-orange.svg" alt="Databricks">
-  <img src="https://img.shields.io/badge/Pipeline-14%20tasks-green.svg" alt="Tasks">
+  <img src="https://img.shields.io/badge/Pipeline-19%20tasks-green.svg" alt="Tasks">
   <img src="https://img.shields.io/badge/Layers-Bronze%20%E2%86%92%20Silver%20%E2%86%92%20Gold-brightgreen.svg" alt="Medallion">
 </p>
 
 <p align="center">
-  <a href="#quick-start">Quick Start</a> &middot; <a href="#tables">Tables</a> &middot; <a href="#sample-queries">Queries</a> &middot; <a href="#visualization-tips">Visualization</a> &middot; <a href="#indicator-formulas">Formulas</a>
+  <a href="#quick-start">Quick Start</a> &middot; <a href="#how-to-read-the-gold-data">Reading the Data</a> &middot; <a href="#tables">Tables</a> &middot; <a href="#sample-queries">Queries</a> &middot; <a href="#visualizations-in-databricks">Visualizations</a> &middot; <a href="#indicator-formulas">Formulas</a>
 </p>
 
 ---
 
-<p align="center">
-  <img src="static-assets/stock-dashboard.png" alt="Stock Analytics Dashboard" width="700">
-</p>
+## How to Read the Gold Data
 
-<p align="center">
-  <img src="static-assets/databricks-sql.png" alt="Databricks SQL Editor" width="700"><br>
-  <em>Query results in Databricks SQL Editor</em>
-</p>
+You have 8 gold tables. Here's what each one is for and how to use it.
 
-<p align="center">
-  <img src="static-assets/deployment.png" alt="Databricks Deployment" width="700"><br>
-  <em>Pipeline deployment in Databricks</em>
-</p>
+### Start Here: `gold.daily_analytics`
 
----
+One big table. Zero joins. Every column for every ticker on every date. This is your primary exploration surface.
 
-## Features
+```sql
+SELECT * FROM gold.daily_analytics
+WHERE as_of_date = (SELECT MAX(as_of_date) FROM gold.daily_analytics)
+ORDER BY composite_score DESC;
+```
 
-| | Feature | Detail |
-|:-:|---------|--------|
-| :chart: | **Configurable watchlist** | 20 default tickers, or any list via `.env` — no code changes |
-| :chart_with_upwards_trend: | **30+ indicators per ticker** | RSI, MACD, Bollinger %B/BandWidth, OBV, MFI, ATR, EMAs, Sharpe, Sortino, max drawdown, beta |
-| :wrench: | **Wilder's smoothing** | Industry-standard RSI/ATR with citations, not Cutler's SMA variant |
-| :diamond_shape_with_a_dot_inside: | **Kimball star schema** | `dim_date` (NYSE calendar), `dim_security` (SCD2), 3 fact tables |
-| :mag: | **One Big Table** | `gold.daily_analytics` — every column, zero joins |
-| :lock: | **Point-in-time Bronze** | `_run_id`, `_ingest_ts`, `_source_event_ts` on every row |
-| :arrows_counterclockwise: | **SCD2 fundamentals** | PE, EPS, analyst targets tracked with version history |
-| :trophy: | **4-dim composite scoring** | Momentum, value, risk, quality — PERCENT_RANK normalized |
-| :bell: | **Signal alerts** | RSI crossover, MACD flip, Bollinger squeeze, MA-200 cross, dividend trap |
-| :globe_with_meridians: | **Macro context** | FRED yield curve, Fed funds, unemployment, CPI + Fama-French 5-factor |
-| :white_check_mark: | **Data quality checks** | Null %, duplicate keys, impossible prices, date monotonicity |
+**What the columns mean:**
+
+| Group | Columns | How to read it |
+|-------|---------|---------------|
+| **Price** | `open, high, low, close, volume` | OHLCV for each trading day |
+| **Trend** | `ma_50, ma_200, ema_50, ema_200` | Moving averages. Price above MA-200 = long-term uptrend. Price below = downtrend. |
+| **Momentum** | `rsi, macd, macd_signal_line, macd_histogram` | RSI > 70 = overbought, < 30 = oversold. MACD histogram > 0 = bullish momentum. |
+| **Volatility** | `bollinger_upper, bollinger_lower, bollinger_pct_b, bollinger_bandwidth, atr_14d` | BandWidth < 10th percentile = squeeze (breakout incoming). %B > 1 = above upper band. ATR = average daily range. |
+| **Volume** | `obv, mfi` | OBV rising = accumulation. MFI > 80 = overbought, < 20 = oversold (volume-weighted RSI). |
+| **Returns** | `change_30d_pct, change_90d_pct, change_365d_pct` | Note: these are 21/63/252 *trading* days, not calendar days. |
+| **Fundamentals** | `trailing_pe, forward_pe, market_cap, debt_to_equity, return_on_equity, ...` | Current snapshot (same values for all dates — historical PIT is in `fact_fundamental_snapshot`). |
+| **Dividends** | `dividend_yield, dividend_yield_gap, dividend_yield_trap` | `yield_trap = true` means current yield is >1.5pp above 5-year average — often a price-drop trap. |
+| **Scoring** | `momentum_pct, value_pct, risk_pct, quality_pct, composite_score` | See below. |
+
+### Understanding Composite Score
+
+`composite_score` = equal-weight average of four `PERCENT_RANK` dimensions, each normalized to 0–1:
+
+| Dimension | Ranks by | High score means |
+|-----------|----------|-----------------|
+| `momentum_pct` | 30-day return (DESC) | Strong recent price momentum |
+| `value_pct` | P/E ratio (ASC) | Low P/E = cheaper = better value |
+| `risk_pct` | RSI (ASC) | Low RSI = oversold = less near-term risk |
+| `quality_pct` | MFI (DESC) | High MFI = accumulation pressure = quality |
+
+**How to use it:**
+- `composite_score > 0.75` — strong candidate, multiple dimensions aligned
+- `0.25 < composite_score < 0.75` — mixed signals, look at individual dimensions
+- `composite_score < 0.25` — weak across the board, or extreme in one dimension dragging it down
+
+A stock can be #1 in momentum but #20 in value — the composite balances them. Always check the individual dimensions before acting.
+
+### Understanding Alerts
+
+`gold.signal_alerts` fires when a threshold is crossed on the latest date:
+
+| Alert Type | What It Means | How to Act |
+|-----------|---------------|------------|
+| `RSI_OVERSOLD` | RSI dropped below 30 | Potential buying opportunity — but check fundamentals and trend first |
+| `RSI_OVERBOUGHT` | RSI rose above 70 | Consider taking profits or tightening stops |
+| `MACD_CROSSOVER` | MACD histogram flipped sign (positive→negative or vice versa) | Positive flip = bullish momentum shift. Negative flip = bearish. Confirm with volume. |
+| `BOLLINGER_SQUEEZE` | Bollinger BandWidth in the bottom 10th percentile for this symbol over the last 6 months | Volatility contraction — a breakout is likely. Direction unknown until it happens. |
+| `MA200_CROSS_ABOVE` | Price crossed above the 200-day moving average | Classic bullish signal — long-term trend turning up |
+| `MA200_CROSS_BELOW` | Price crossed below the 200-day moving average | Classic bearish signal — long-term trend turning down |
+| `DIVIDEND_YIELD_TRAP` | Current dividend yield is >1.5pp above the 5-year average | The yield is high because the price dropped, not because dividends increased. Verify payout ratio < 75% before buying. |
+
+**Important:** Alerts are point-in-time snapshots, rebuilt each pipeline run. They reflect the *latest* trading day only. For historical alert patterns, query `gold.signal_history` and compute your own thresholds.
+
+### What Is Congress Doing on My Stocks?
+
+`gold.congressional_trades_summary` aggregates Senate stock trade disclosures per symbol. Join it to `gold.daily_analytics`:
+
+```sql
+-- Which congresspeople traded stocks on my watchlist recently?
+SELECT
+    c.symbol, c.office_name, c.chamber, c.trade_type,
+    c.trade_count, c.avg_amount_midpoint, c.last_trade_date,
+    a.close, a.composite_score, a.rsi
+FROM gold.congressional_trades_summary c
+JOIN gold.daily_analytics a
+    ON c.symbol = a.symbol
+    AND a.as_of_date = (SELECT MAX(as_of_date) FROM gold.daily_analytics)
+ORDER BY c.last_trade_date DESC;
+```
+
+**Columns in `gold.congressional_trades_summary`:**
+
+| Column | Meaning |
+|--------|---------|
+| `symbol` | Ticker |
+| `office_name` | Senator/Representative name |
+| `chamber` | Senate (House data not yet available) |
+| `trade_type` | `buy`, `sell`, `sell_full`, `exchange` |
+| `trade_count` | Number of reported transactions |
+| `avg_amount_midpoint` | Midpoint of the reported dollar range (e.g., $8,000 for "$1,001–$15,000") |
+| `max_amount_range` | Upper bound of reported range |
+| `total_estimated_value` | Sum of midpoints |
+| `last_trade_date` | Most recent filing date |
+
+**Limitations:** Senate data only (45-day filing delay). Amounts are ranges, not exact. House trades require a separate API.
+
+### How Long Until I Can Make Informed Decisions?
+
+| Time Since First Run | What's Reliable | What's Not |
+|----------------------|-----------------|------------|
+| **Day 1** | Prices, fundamentals, congressional trades, macro data | RSI/MACD/Bollinger (need history), composite scores |
+| **1 week** | Short-term RSI (14-day), MACD starting to form | MA-200 (needs 200 days), composite scores unreliable |
+| **1 month** | RSI, MACD, Bollinger Bands, OBV, MFI all valid | MA-200 still converging, 90-day and 365-day returns not yet meaningful |
+| **3 months** | MA-200 converging, composite scores starting to be meaningful | 365-day returns, long-term trend analysis |
+| **1 year** | Everything. Full backtest capability, MA-200 reliable, all return windows valid | Factor regression (roadmap) |
+
+The pipeline uses `period="max"` for prices, so yfinance provides all available history on first run. The warmup period (200 trading days ≈ 10 months) is dropped for EMA-200 convergence. After first run, you'll have years of historical data — but EMA-200 and 252-day returns need time to stabilize.
 
 ---
 
 ## Pipeline DAG
 
-14 tasks, fully parallelized where possible:
+19 tasks, fully parallelized where possible:
 
 ```
 setup_catalog
- ├── ingest_prices ─────────────────┐
- ├── ingest_fundamentals ──────────┤  Bronze
- ├── ingest_fred ───────────────────┤  (append-only)
- ├── ingest_fama_french ────────────┘
+ ├── ingest_prices ──────────────────┐
+ ├── ingest_fundamentals ───────────┤
+ ├── ingest_fred ────────────────────┤  Bronze
+ ├── ingest_fama_french ────────────┤  (append-only)
+ ├── ingest_congressional ──────────┤
+ ├── ingest_splits ─────────────────┘
  │
- ├── build_silver_prices ────────────┐
- │   build_silver_fundamentals ──────┤  Silver
- │   build_silver_signals ────────────┘  (MERGE dedup)
+ │   build_silver_prices ──────────────┐
+ │   build_silver_fundamentals ───────┤  Silver
+ │   build_silver_signals ─────────────┤  (MERGE dedup)
+ │   build_silver_congressional ──────┤
+ │   build_silver_splits ──────────────┘
  │
- ├── build_gold_dim_date ────────────────┐
- │   build_gold_dim_security ─────────────┤  Gold dims
- │                                         │
- │   build_gold_fact_market ───────────────┤  Gold facts
- │   build_gold_fact_fundamentals ────────┤  (star schema)
- │   build_gold_fact_signals ──────────────┘
+ │   build_gold_dim_date ──────────────────┐
+ │   build_gold_dim_security ───────────────┤  Gold dims
+ │                                          │
+ │   build_gold_fact_market ────────────────┤  Gold facts
+ │   build_gold_fact_fundamentals ─────────┤  (star schema)
+ │   build_gold_fact_signals ───────────────┘
  │
- └── build_gold_analytics ──────────────── Gold serving tables
+ └── build_gold_analytics ───────────────── Gold serving tables
+ └── build_gold_congressional ───────────── Gold serving tables
 ```
 
 <details>
@@ -87,20 +167,18 @@ The pipeline runs **daily after US market close** (10 PM ET, Mon-Fri). NYSE clos
 | Weekly | `0 0 22 ? * FRI` | Misses intraweek signal flips |
 | Ad-hoc | Manual | Run after market events |
 
-To change the schedule, edit `databricks.yml` then `databricks bundle deploy`.
-
 Run manually: `databricks bundle run stock_analytics_pipeline`
 
-**Data accumulation per layer:**
+**Idempotency — re-runs are safe:**
 
-| Layer | Behavior | Growth |
-|-------|----------|--------|
-| Bronze prices | Append every run | ~440 rows/run (20 tickers x 22 days/month) |
-| Bronze fundamentals | SCD2 MERGE | New versions only when attributes change |
-| Silver prices | MERGE on (symbol, date) | New dates inserted; existing updated |
-| Silver signals | MERGE on (symbol, as_of_date) | Same pattern |
-| Gold facts | Rebuilt from Silver each run | Contains all accumulated history |
-| Gold serving | Rebuilt from Silver each run | Contains all accumulated history |
+| Layer | Write Mode | What Happens on Re-run |
+|-------|-----------|----------------------|
+| Bronze prices | append + `_run_id` | New rows appended. Silver MERGE dedupes on `(symbol, date)`. |
+| Bronze fundamentals | SCD2 MERGE | Expired versions get `is_current=false`, new versions inserted. No duplicates. |
+| Bronze macro/factors | append | New rows appended. |
+| Silver | MERGE on natural keys | New dates inserted, existing rows updated. No duplicates. |
+| Gold facts | CREATE OR REPLACE | Rebuilt from Silver each run. |
+| Gold serving | CREATE OR REPLACE | Rebuilt from Silver each run. |
 
 After 1 year: ~5,040 rows per ticker-level table. After 3 years: ~15,120 rows.
 
@@ -120,6 +198,8 @@ See [`documentation/scheduling-and-accumulation.md`](documentation/scheduling-an
 | `bronze.company_fundamentals` | append (SCD2) | Fundamentals with `effective_from/to`, `is_current`, `attr_hash` |
 | `bronze.macro_indicators` | append | FRED: Treasury yields, Fed funds, unemployment, CPI |
 | `bronze.factor_returns` | append | Fama-French 5-factor + momentum daily returns |
+| `bronze.congressional_trades` | append | Senate stock trade disclosures (symbol, office, amount, date) |
+| `bronze.stock_splits` | append | Stock split events from yfinance |
 
 ### Silver — Validated, Deduped
 
@@ -128,6 +208,8 @@ See [`documentation/scheduling-and-accumulation.md`](documentation/scheduling-an
 | `silver.daily_prices` | MERGE | `(symbol, date)` |
 | `silver.daily_signals` | MERGE | `(symbol, as_of_date)` |
 | `silver.fundamentals_current` | MERGE | `(symbol)` — current SCD2 version |
+| `silver.congressional_trades` | MERGE | `(symbol, transaction_date, office_name, trade_type)` |
+| `silver.stock_splits` | MERGE | `(symbol, split_date)` |
 
 ### Gold — Two Ways to Query
 
@@ -143,21 +225,15 @@ Three fact tables joined through two conformed dimensions. Each fact is a differ
 
 | Table | Mode | Content |
 |-------|------|---------|
-| `gold.dim_date` | replace | NYSE trading calendar, `is_trading_day`, `is_early_close`, prior/next trading day |
+| `gold.dim_date` | replace | NYSE trading calendar, `is_trading_day`, `is_early_close`, `is_split_day`, prior/next trading day |
 | `gold.dim_security` | MERGE (SCD2) | Ticker name, sector, industry, exchange, country |
 | `gold.fact_market_price_daily` | replace | OHLCV + 1d/5d/21d/63d/252d returns |
-| `gold.fact_fundamental_snapshot` | replace | PE, EPS, margins, growth, debt ratios |
+| `gold.fact_fundamental_snapshot` | replace | PE, EPS, margins, growth, debt ratios (point-in-time from SCD2) |
 | `gold.fact_signal_snapshot` | replace | All indicators + PERCENT_RANK composite scores |
 
 #### `gold.daily_analytics` — One Big Table (exploration, ad-hoc, ML)
 
 A single wide table joining signals + prices + fundamentals. **Zero joins needed.**
-
-| Source | Columns |
-|--------|---------|
-| `silver.daily_prices` | open, high, low, close, volume |
-| `silver.daily_signals` | All technical indicators, returns, composite scores |
-| `silver.fundamentals_current` | sector, industry, market_cap, PE, EPS, margins, debt |
 
 | | Star Schema | `daily_analytics` |
 |:-:|---|---|
@@ -165,51 +241,27 @@ A single wide table joining signals + prices + fundamentals. **Zero joins needed
 | **Best for** | BI, drill-across, lineage | Exploration, ML, ad-hoc |
 | **Flexibility** | Add new fact independently | Add column = rebuild table |
 
-<details>
-<summary><strong>All columns in <code>gold.daily_analytics</code></strong></summary>
-
-```
-IDENTITY      symbol, as_of_date
-PRICE         open, high, low, close, volume
-INDICATORS    trade_signal, rsi, macd, macd_signal_line, macd_histogram,
-              bollinger_upper, bollinger_lower, bollinger_pct_b, bollinger_bandwidth,
-              obv, mfi, ma_50, ma_200, ema_50, ema_200, atr_14d
-RETURNS       last_day_change_abs, last_day_change_pct,
-              change_30d_pct, change_90d_pct, change_365d_pct, last_closing_price
-FUNDAMENTALS  short_name, long_name, sector, industry, country, currency, exchange,
-              market_cap, trailing_pe, forward_pe, price_to_book,
-              trailing_eps, forward_eps,
-              dividend_rate, dividend_yield, payout_ratio,
-              beta, profit_margins, operating_margins, gross_margins,
-              revenue_growth, earnings_growth,
-              return_on_equity, return_on_assets,
-              debt_to_equity, current_ratio, free_cashflow
-SIGNALS       dividend_yield, dividend_yield_gap, dividend_yield_trap
-SCORING       momentum_pct, value_pct, risk_pct, quality_pct, composite_score
-```
-
-</details>
-
 ### Gold Serving Tables
 
-| Table | Content |
-|-------|---------|
-| `gold.daily_analytics` | **Master wide table — all prices, indicators, fundamentals. Zero joins.** |
-| `gold.watchlist_ranked` | Top tickers by momentum, value, risk, quality, composite |
-| `gold.signal_alerts` | RSI cross, MACD flip, Bollinger squeeze, MA cross, yield trap |
-| `gold.signal_history` | Time series for charting |
-| `gold.benchmark_compare` | vs SPY/QQQ cumulative returns |
-| `gold.portfolio_candidates` | top_momentum, oversold, value_dividend, low_volatility |
-| `gold.trade_log` | Manual trade journal (INSERT via SQL) |
+| Table | Content | Use For |
+|-------|---------|---------|
+| `gold.daily_analytics` | **Master wide table — all prices, indicators, fundamentals.** | Ad-hoc queries, ML features, exploration |
+| `gold.watchlist_ranked` | Top tickers ranked by composite score | "What should I look at today?" |
+| `gold.signal_alerts` | Threshold alerts (RSI, MACD, Bollinger, MA-200, dividend trap) | "What's happening right now?" |
+| `gold.signal_history` | Time series of all indicators per symbol | Charting, backtesting |
+| `gold.benchmark_compare` | Each ticker vs SPY/QQQ 30d/90d/365d returns | Relative performance |
+| `gold.portfolio_candidates` | Bucketed: top_momentum, oversold, value_dividend, low_volatility | Stock screening |
+| `gold.congressional_trades_summary` | Congressional trades per symbol/office | "What is Congress trading?" |
+| `gold.trade_log` | Manual trade journal (INSERT via SQL) | Tracking your own trades |
 
 ---
 
 ## Sample Queries
 
-### Quick Exploration — `gold.daily_analytics` (zero joins)
+### Daily Analytics (zero-join table)
 
 ```sql
--- Top momentum stocks today
+-- Top 10 momentum stocks today
 SELECT symbol, short_name, close, change_30d_pct, rsi, composite_score
 FROM gold.daily_analytics
 WHERE as_of_date = (SELECT MAX(as_of_date) FROM gold.daily_analytics)
@@ -234,7 +286,7 @@ GROUP BY sector
 ORDER BY avg_rsi DESC;
 
 -- Value stocks with dividend safety
-SELECT symbol, close, trailing_pe, dividend_yield, payout_ratio
+SELECT symbol, close, trailing_pe, dividend_yield, dividend_yield_trap, payout_ratio
 FROM gold.daily_analytics
 WHERE as_of_date = (SELECT MAX(as_of_date) FROM gold.daily_analytics)
   AND trailing_pe BETWEEN 8 AND 18
@@ -244,12 +296,58 @@ WHERE as_of_date = (SELECT MAX(as_of_date) FROM gold.daily_analytics)
 ORDER BY dividend_yield DESC;
 ```
 
-### Star Schema — Drill-Across
+### Congressional Trades
 
 ```sql
+-- Which senators bought stocks I'm watching?
+SELECT c.symbol, c.office_name, c.trade_type, c.trade_count,
+       c.avg_amount_midpoint, c.last_trade_date
+FROM gold.congressional_trades_summary c
+WHERE c.trade_type = 'buy'
+ORDER BY c.last_trade_date DESC;
+
+-- Congressional activity on high-momentum stocks
+SELECT c.symbol, c.office_name, c.trade_type, c.trade_count,
+       a.change_30d_pct, a.rsi, a.composite_score
+FROM gold.congressional_trades_summary c
+JOIN gold.daily_analytics a
+  ON c.symbol = a.symbol
+  AND a.as_of_date = (SELECT MAX(as_of_date) FROM gold.daily_analytics)
+WHERE a.composite_score > 0.75
+ORDER BY a.composite_score DESC;
+```
+
+### Alerts
+
+```sql
+-- Today's signal alerts
+SELECT alert_type, symbol, alert_value, as_of_date
+FROM gold.signal_alerts
+WHERE as_of_date = (SELECT MAX(as_of_date) FROM gold.signal_alerts)
+ORDER BY alert_type, symbol;
+
+-- Stocks crossing above 200-day MA (bullish breakout)
+SELECT symbol, as_of_date, alert_value AS close_price
+FROM gold.signal_alerts
+WHERE alert_type = 'MA200_CROSS_ABOVE';
+
+-- Bollinger squeeze candidates
+SELECT symbol, bollinger_bandwidth
+FROM gold.daily_analytics
+WHERE as_of_date = (SELECT MAX(as_of_date) FROM gold.daily_analytics)
+  AND bollinger_bandwidth IS NOT NULL
+ORDER BY bollinger_bandwidth ASC
+LIMIT 10;
+```
+
+### Star Schema (drill-across)
+
+```sql
+-- How does momentum correlate with valuation across sectors?
 SELECT s.sector, s.industry,
        AVG(sig.rsi) AS avg_rsi,
-       AVG(f.`trailingPE`) AS avg_pe
+       AVG(f.`trailingPE`) AS avg_pe,
+       AVG(f.`dividendYield`) AS avg_yield
 FROM gold.fact_signal_snapshot sig
 JOIN gold.dim_security s ON sig.security_key = s.security_key AND s.is_current = true
 JOIN gold.dim_date d ON sig.date_key = d.date_key
@@ -262,59 +360,165 @@ GROUP BY s.sector, s.industry
 ORDER BY avg_rsi DESC;
 ```
 
-### Alerts
-
-```sql
--- Today's signal alerts
-SELECT alert_type, symbol, alert_value
-FROM gold.signal_alerts
-WHERE as_of_date = (SELECT MAX(as_of_date) FROM gold.signal_alerts)
-ORDER BY alert_type, symbol;
-
--- Bollinger squeeze candidates
-SELECT symbol, bollinger_bandwidth
-FROM gold.daily_analytics
-WHERE as_of_date = (SELECT MAX(as_of_date) FROM gold.daily_analytics)
-  AND bollinger_bandwidth IS NOT NULL
-ORDER BY bollinger_bandwidth ASC
-LIMIT 10;
-```
-
-### Time Series
-
-```sql
--- 30-day RSI trend for a stock
-SELECT as_of_date, rsi, macd, macd_signal_line, bollinger_pct_b
-FROM gold.signal_history
-WHERE symbol = 'AAPL'
-ORDER BY as_of_date DESC
-LIMIT 30;
-
--- Compare vs SPY/QQQ
-SELECT symbol, change_30d_pct, spy_change_30d, change_90d_pct, spy_change_90d
-FROM gold.benchmark_compare
-ORDER BY change_90d_pct DESC;
-```
-
 More queries in [`documentation/sql-exploration-queries.md`](documentation/sql-exploration-queries.md).
 
 ---
 
-## Visualization Tips
+## Visualizations in Databricks
 
-| Chart | Table | How |
-|-------|-------|-----|
-| Ranked watchlist | `gold.watchlist_ranked` | Bar chart by composite_score DESC, color by sector |
-| Momentum heatmap | `gold.daily_analytics` | Pivot sector x change_30d_pct, green-red color scale |
-| RSI overbought/oversold | `gold.signal_alerts` | Filter RSI_OVERSOLD/OVERBOUGHT, conditional formatting |
-| Bollinger squeeze | `gold.daily_analytics` | Filter low bollinger_bandwidth, small multiples by sector |
-| Sector rotation | `gold.daily_analytics` | Scatter: change_30d_pct vs rsi, bubble = market_cap |
-| Price + MACD overlay | `gold.signal_history` | Dual-axis: price line + MACD histogram bars |
-| Dividend yield trap | `gold.signal_alerts` | Filter DIVIDEND_YIELD_TRAP, red-flagged table |
-| Fundamentals radar | `gold.daily_analytics` | Radar chart on normalized PE, yield, margins, ROE, growth |
-| Risk-return scatter | `gold.daily_analytics` | x=beta, y=change_365d_pct, color by sector |
+### 1. Watchlist Dashboard — "What should I look at today?"
 
-Step-by-step tutorials in [`documentation/databricks-visualization-tutorials.md`](documentation/databricks-visualization-tutorials.md).
+**Table:** `gold.watchlist_ranked`
+
+```sql
+SELECT symbol, composite_score, momentum_pct, value_pct, risk_pct, quality_pct,
+       rsi, pe_ratio, last_closing_price
+FROM gold.watchlist_ranked
+ORDER BY composite_score DESC;
+```
+
+**Chart:** Bar chart. X = `symbol`, Y = `composite_score`. Color by sector (join to `daily_analytics` for sector).
+
+### 2. Alert Dashboard — "What's happening right now?"
+
+**Table:** `gold.signal_alerts`
+
+```sql
+SELECT alert_type, symbol, alert_value, as_of_date
+FROM gold.signal_alerts
+WHERE as_of_date = (SELECT MAX(as_of_date) FROM gold.signal_alerts)
+ORDER BY alert_type, symbol;
+```
+
+**Chart:** Table with conditional formatting. RSI_OVERSOLD rows in green, RSI_OVERBOUGHT in red, BOLLINGER_SQUEEZE in yellow, MA200 crosses in blue.
+
+### 3. Congressional Tracker — "What is Congress trading?"
+
+**Table:** `gold.congressional_trades_summary` + `gold.daily_analytics`
+
+```sql
+SELECT c.symbol, c.office_name, c.chamber, c.trade_type,
+       c.trade_count, c.avg_amount_midpoint, c.last_trade_date,
+       a.close, a.composite_score, a.rsi
+FROM gold.congressional_trades_summary c
+JOIN gold.daily_analytics a
+  ON c.symbol = a.symbol
+  AND a.as_of_date = (SELECT MAX(as_of_date) FROM gold.daily_analytics)
+ORDER BY c.last_trade_date DESC;
+```
+
+**Chart:** Table grouped by `office_name`. Add a scatter plot: X = `composite_score`, Y = `avg_amount_midpoint`, color by `trade_type`.
+
+### 4. Sector Rotation Heatmap
+
+**Table:** `gold.daily_analytics`
+
+```sql
+SELECT sector, AVG(rsi) AS avg_rsi, AVG(change_30d_pct) AS avg_momentum,
+       AVG(composite_score) AS avg_score
+FROM gold.daily_analytics
+WHERE as_of_date = (SELECT MAX(as_of_date) FROM gold.daily_analytics)
+  AND sector IS NOT NULL
+GROUP BY sector
+ORDER BY avg_score DESC;
+```
+
+**Chart:** Heatmap or treemap. Size = count of stocks, color = `avg_score`.
+
+### 5. Price + MACD Dual-Axis Chart
+
+**Table:** `gold.signal_history`
+
+```sql
+SELECT as_of_date, symbol, last_closing_price, macd, macd_signal_line, macd_histogram
+FROM gold.signal_history
+WHERE symbol = 'AAPL'
+ORDER BY as_of_date DESC
+LIMIT 90;
+```
+
+**Chart:** Line chart. Left Y-axis = `last_closing_price`, right Y-axis = `macd_histogram` (bar). Add `macd` and `macd_signal_line` as lines on the right axis.
+
+### 6. Dividend Yield Trap Scanner
+
+**Table:** `gold.daily_analytics`
+
+```sql
+SELECT symbol, close, dividend_yield, dividend_yield_gap, dividend_yield_trap,
+       payout_ratio, trailing_pe
+FROM gold.daily_analytics
+WHERE as_of_date = (SELECT MAX(as_of_date) FROM gold.daily_analytics)
+  AND dividend_yield > 0.02
+ORDER BY dividend_yield_gap DESC;
+```
+
+**Chart:** Scatter plot. X = `dividend_yield`, Y = `dividend_yield_gap`, color = `dividend_yield_trap` (red/green). Size = `payout_ratio`.
+
+### 7. Benchmark Comparison
+
+**Table:** `gold.benchmark_compare`
+
+```sql
+SELECT symbol, last_closing_price,
+       change_30d_pct, spy_change_30d, qqq_change_30d,
+       change_90d_pct, spy_change_90d, qqq_change_90d,
+       change_365d_pct, spy_change_365d, qqq_change_365d
+FROM gold.benchmark_compare
+ORDER BY change_365d_pct DESC;
+```
+
+**Chart:** Grouped bar chart. Each ticker shows its 30d/90d/365d returns alongside SPY and QQQ.
+
+Step-by-step Databricks dashboard tutorials in [`documentation/databricks-visualization-tutorials.md`](documentation/databricks-visualization-tutorials.md).
+
+---
+
+## Alerting Flow
+
+### Current State
+
+Alerts are **SQL tables**, rebuilt on each pipeline run. There is no push notification mechanism. To check alerts:
+
+```sql
+SELECT * FROM gold.signal_alerts
+WHERE as_of_date = (SELECT MAX(as_of_date) FROM gold.signal_alerts);
+```
+
+### How Alerts Work
+
+1. Pipeline runs daily after market close
+2. `build_gold_analytics` computes alert thresholds against the latest snapshot + signal history
+3. `gold.signal_alerts` is replaced with that day's alerts
+4. You query the table to see what fired
+
+### Alert Types and Thresholds
+
+| Alert | Threshold | Meaning |
+|-------|-----------|---------|
+| `RSI_OVERSOLD` | RSI < 30 | Price may be oversold — potential buy |
+| `RSI_OVERBOUGHT` | RSI > 70 | Price may be overbought — potential sell |
+| `MACD_CROSSOVER` | Histogram flips sign | Momentum direction change |
+| `BOLLINGER_SQUEEZE` | BandWidth in bottom 10th percentile (per-symbol, 126-day window) | Volatility contraction — breakout likely |
+| `MA200_CROSS_ABOVE` | Price crosses above 200-day MA | Long-term bullish signal |
+| `MA200_CROSS_BELOW` | Price crosses below 200-day MA | Long-term bearish signal |
+| `DIVIDEND_YIELD_TRAP` | Current yield > 5-yr avg + 1.5pp | High yield from price drop, not dividend growth |
+
+### Limitations
+
+- **No push notifications** — alerts exist only as table rows
+- **No alert history** — `signal_alerts` is replaced each run (use `signal_history` for historical thresholds)
+- **No deduplication** — same alert fires each day until the condition clears
+- **No severity levels** — all alerts are equal priority
+
+### Roadmap
+
+| Priority | Feature |
+|----------|---------|
+| High | Alert history table (append, don't replace) |
+| High | Email/webhook notification on alert fire |
+| Medium | Alert severity (critical, warning, info) |
+| Medium | Net congressional direction per symbol |
+| Low | News/sentiment integration |
 
 ---
 
@@ -325,16 +529,14 @@ Step-by-step tutorials in [`documentation/databricks-visualization-tutorials.md`
 - Databricks CLI (`brew install databricks`)
 - Terraform (`brew install terraform`)
 - Python 3.11+
-- FRED API key ([get one free](https://fred.stlouisfed.org/docs/api/api_key.html))
+- FRED API key ([free](https://fred.stlouisfed.org/docs/api/api_key.html))
 
 ### 1. Configure
 
 ```bash
 git clone <repo-url> && cd stock_watch_list_analysis
-git checkout develop
-
 cp .env.example .env
-# Edit .env: add your tickers, Databricks host, FRED API key
+# Edit .env: add your tickers and FRED_API_KEY
 ```
 
 ### 2. Local Development
@@ -380,10 +582,11 @@ All formulas use industry-standard definitions with citations.
 | BandWidth | (upper - lower) / middle | Bollinger |
 | OBV | Cumulative +/-volume | Granville (1963) |
 | MFI | 100 - 100/(1 + money_ratio) | Quong & Soudack (1989) |
-| Sharpe | (return - rf) / sigma | Sharpe, J. Portfolio Mgmt (1994) |
+| Sharpe | (return - rf) / sigma | Sharpe (1994) |
 | Sortino | (return - target) / downside sigma | Sortino & Price (1994) |
 | Max Drawdown | max peak-to-trough | Standard |
 | Beta | Cov(stock, bench) / Var(bench) | Standard |
+| Dividend Yield Gap | TTM yield - 5-year avg yield | Traps: gap > 1.5pp |
 
 ---
 
@@ -396,39 +599,3 @@ All formulas use industry-standard definitions with citations.
 - **`gold.daily_analytics` is the exploration surface** — one big table, zero joins, all columns. Start here for ad-hoc questions.
 - **PERCENT_RANK not raw RANK** — normalize each dimension to [0,1] before combining. Raw rank sums favor large-cap stocks.
 - **Liquid Clustering** on `(symbol, date)` for new tables — no partitioning, no Z-ORDER.
-
----
-
-## Data Quality
-
-| Layer | Checks |
-|-------|--------|
-| Bronze | Non-empty, expected columns, null %, price consistency (high >= low, volume >= 0), `_source_event_ts <= _ingest_ts` |
-| Silver | `(symbol, date)` dedup verified, no impossible prices, date monotonicity |
-| Gold | Latest date exists, rank columns populated, dashboard tables non-empty |
-
----
-
-## Non-Goals
-
-Tick data, real-time streaming, options, broker integration, autonomous trading, heavy ML, NLP, hourly intraday.
-
-## Roadmap
-
-| Priority | Feature | Description |
-|----------|---------|-------------|
-| High | Congressional trade tracking | Ingest congressional stock trade disclosures (Senate/House). Annotate gold security rows with which congresspeople traded, amounts, and recency. New bronze source + silver enrichment + gold annotations. |
-| High | Stock split detection & adjustment | Detect stock splits from yfinance metadata. Log split events in a bronze table. Verify adjusted prices are consistent post-split. Flag split dates in dim_date. |
-| Medium | Point-in-time fundamentals | Current fundamentals use latest snapshot for all historical dates. SCD2 history in bronze.fundamentals enables true point-in-time PE/EPS per date. |
-| Medium | Factor regression | Regress stock returns against Fama-French 5-factor + momentum. Store factor loadings in gold.fact_factor_exposure. |
-| Low | Sector rotation dashboard | Track sector-level RSI/momentum trends over time. Identify rotation patterns. |
-
-## Resources
-
-- [Databricks Medallion Architecture](https://docs.databricks.com/aws/en/lakehouse/medallion)
-- [Databricks Data Modeling](https://docs.databricks.com/aws/en/transform/data-modeling)
-- [Kimball Dimensional Modeling Techniques](https://www.kimballgroup.com/wp-content/uploads/2013/08/2013.09-Kimball-Dimensional-Modeling-Techniques11.pdf)
-- [Point-in-Time Data for Investment Decisions](https://starqube.com/point-in-time-data/)
-- [Databricks Liquid Clustering](https://databricks.com/blog/announcing-general-availability-liquid-clustering)
-- [FRED API](https://fred.stlouisfed.org/docs/api/fred/)
-- [Fama-French Data Library](https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/data_library.html)

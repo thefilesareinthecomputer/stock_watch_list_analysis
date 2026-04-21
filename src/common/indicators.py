@@ -421,11 +421,19 @@ def build_signal_row(
     forward_eps = safe_float(info.get("forwardEps"))
     forward_pe = safe_float(info.get("forwardPE"))
 
-    # Dividend yield gap detection (TTM vs FWD, flag yield traps)
+    # Dividend yield gap detection (TTM vs 5-year average, flag yield traps)
+    # A yield trap occurs when current yield is much higher than historical average,
+    # typically because the stock price dropped sharply (high yield = low price = red flag).
+    # yfinance provides: dividendYield (TTM), fiveYearAvgDividendYield (5yr avg).
     trailing_yield = dividend_yield
-    forward_yield = safe_float(info.get("dividendYield"))
-    dividend_yield_gap = trailing_yield - forward_yield if (not np.isnan(trailing_yield) and not np.isnan(forward_yield)) else np.nan
-    # Flag if TTM yield > FWD yield by >1.5 percentage points (potential yield trap)
+    five_year_avg_yield = safe_float(info.get("fiveYearAvgDividendYield"))
+    if np.isnan(five_year_avg_yield) or five_year_avg_yield == 0:
+        # Fallback: if no 5-year average, compute gap from dividendRate/price vs dividendYield
+        dividend_rate = safe_float(info.get("dividendRate"))
+        if not np.isnan(dividend_rate) and current_price > 0:
+            five_year_avg_yield = dividend_rate / current_price
+    dividend_yield_gap = (trailing_yield - five_year_avg_yield) if (not np.isnan(trailing_yield) and not np.isnan(five_year_avg_yield)) else np.nan
+    # Flag if current yield exceeds 5-year average by >1.5 percentage points
     dividend_yield_trap = True if (not np.isnan(dividend_yield_gap) and dividend_yield_gap > 0.015) else False
 
     row = {
@@ -665,12 +673,16 @@ def build_signal_series(
             safe_float(info.get("forwardPE")), index=close.index)
 
         trailing_yield = dividend_yield_series.iloc[0]
-        forward_yield = safe_float(info.get("dividendYield"))
-        if (not np.isnan(trailing_yield) and not np.isnan(forward_yield)):
+        five_year_avg_yield = safe_float(info.get("fiveYearAvgDividendYield"))
+        if np.isnan(five_year_avg_yield) or five_year_avg_yield == 0:
+            dividend_rate = safe_float(info.get("dividendRate"))
+            if not np.isnan(dividend_rate) and close.iloc[-1] > 0:
+                five_year_avg_yield = dividend_rate / close.iloc[-1]
+        if (not np.isnan(trailing_yield) and not np.isnan(five_year_avg_yield)):
             dividend_yield_gap_series = pd.Series(
-                trailing_yield - forward_yield, index=close.index)
+                trailing_yield - five_year_avg_yield, index=close.index)
             dividend_yield_trap_series = pd.Series(
-                1.0 if (trailing_yield - forward_yield) > 0.015 else 0.0,
+                1.0 if (trailing_yield - five_year_avg_yield) > 0.015 else 0.0,
                 index=close.index)
         else:
             dividend_yield_gap_series = pd.Series(np.nan, index=close.index)
