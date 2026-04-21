@@ -23,15 +23,18 @@ from common.config import TABLE_BRONZE_FACTORS
 from common.run_context import new_run_id, now_ts, LOAD_TYPE
 
 # Fama-French data ZIP URLs (direct from Dartmouth)
-FF5_URL = "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/Five_Factors_Daily_CSV.zip"
-MOMENTUM_URL = "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/Momentum_Factor_Daily_CSV.zip"
+FF5_URL = "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/F-F_Research_Data_5_Factors_2x3_daily_CSV.zip"
+MOMENTUM_URL = "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/F-F_Momentum_Factor_daily_CSV.zip"
+# Header rows differ between files: FF5 has 4 header rows, Momentum has 13
+FF5_SKIP_ROWS = 4
+MOMENTUM_SKIP_ROWS = 13
 
 
-def download_ff_factors(url: str, label: str) -> pd.DataFrame | None:
+def download_ff_factors(url: str, label: str, skiprows: int = 13) -> pd.DataFrame | None:
     """Download and parse a Fama-French CSV from the Dartmouth ZIP."""
     try:
         # Read the CSV directly from the ZIP (pandas handles ZIP)
-        df = pd.read_csv(url, compression="zip", skiprows=13)  # skip header rows
+        df = pd.read_csv(url, compression="zip", skiprows=skiprows)
         # Clean: drop the copyright footer rows
         df = df.dropna(subset=[df.columns[0]])
         # First column is the date as YYYYMMDD integer
@@ -59,8 +62,8 @@ def main():
     print(f"[ingest_fama_french] Run ID: {run_id}")
     print("[ingest_fama_french] Downloading Fama-French 5-factor data...")
 
-    ff5 = download_ff_factors(FF5_URL, "5-Factor")
-    mom = download_ff_factors(MOMENTUM_URL, "Momentum")
+    ff5 = download_ff_factors(FF5_URL, "5-Factor", skiprows=FF5_SKIP_ROWS)
+    mom = download_ff_factors(MOMENTUM_URL, "Momentum", skiprows=MOMENTUM_SKIP_ROWS)
 
     if ff5 is None and mom is None:
         print("[ingest_fama_french] WARNING: No factor data downloaded. Exiting.")

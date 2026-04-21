@@ -28,10 +28,14 @@ TABLE_BRONZE_PRICES = f"{CATALOG}.{SCHEMA_BRONZE}.daily_prices"
 TABLE_BRONZE_FUNDAMENTALS = f"{CATALOG}.{SCHEMA_BRONZE}.company_fundamentals"
 TABLE_BRONZE_MACRO = f"{CATALOG}.{SCHEMA_BRONZE}.macro_indicators"
 TABLE_BRONZE_FACTORS = f"{CATALOG}.{SCHEMA_BRONZE}.factor_returns"
+TABLE_BRONZE_CONGRESSIONAL = f"{CATALOG}.{SCHEMA_BRONZE}.congressional_trades"
+TABLE_BRONZE_SPLITS = f"{CATALOG}.{SCHEMA_BRONZE}.stock_splits"
 # Silver: 3 tables separated by business process
 TABLE_SILVER_PRICES = f"{CATALOG}.{SCHEMA_SILVER}.daily_prices"
 TABLE_SILVER_SIGNALS = f"{CATALOG}.{SCHEMA_SILVER}.daily_signals"
 TABLE_SILVER_FUNDAMENTALS = f"{CATALOG}.{SCHEMA_SILVER}.fundamentals_current"
+TABLE_SILVER_CONGRESSIONAL = f"{CATALOG}.{SCHEMA_SILVER}.congressional_trades"
+TABLE_SILVER_SPLITS = f"{CATALOG}.{SCHEMA_SILVER}.stock_splits"
 # Gold: Kimball star schema (dims + facts) + serving tables
 TABLE_GOLD_DIM_DATE = f"{CATALOG}.{SCHEMA_GOLD}.dim_date"
 TABLE_GOLD_DIM_SECURITY = f"{CATALOG}.{SCHEMA_GOLD}.dim_security"
@@ -45,6 +49,7 @@ TABLE_GOLD_BENCHMARK_COMPARE = f"{CATALOG}.{SCHEMA_GOLD}.benchmark_compare"
 TABLE_GOLD_PORTFOLIO_CANDIDATES = f"{CATALOG}.{SCHEMA_GOLD}.portfolio_candidates"
 TABLE_GOLD_TRADE_LOG = f"{CATALOG}.{SCHEMA_GOLD}.trade_log"
 TABLE_GOLD_DAILY_ANALYTICS = f"{CATALOG}.{SCHEMA_GOLD}.daily_analytics"
+TABLE_GOLD_CONGRESSIONAL_SUMMARY = f"{CATALOG}.{SCHEMA_GOLD}.congressional_trades_summary"
 
 # -------------------------------------------------------------------
 # WATCHLIST — Single source of truth: USER_STOCK_WATCH_LIST env var

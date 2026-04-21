@@ -185,6 +185,7 @@ FUNDAMENTALS  short_name, long_name, sector, industry, country, currency, exchan
               return_on_equity, return_on_assets,
               debt_to_equity, current_ratio, free_cashflow
 SIGNALS       dividend_yield, dividend_yield_gap, dividend_yield_trap
+SCORING       momentum_pct, value_pct, risk_pct, quality_pct, composite_score
 ```
 
 </details>
@@ -238,7 +239,7 @@ FROM gold.daily_analytics
 WHERE as_of_date = (SELECT MAX(as_of_date) FROM gold.daily_analytics)
   AND trailing_pe BETWEEN 8 AND 18
   AND dividend_yield > 0.02
-  AND dividend_yield_trap = false
+  AND NOT dividend_yield_trap
   AND payout_ratio < 0.75
 ORDER BY dividend_yield DESC;
 ```
@@ -248,14 +249,14 @@ ORDER BY dividend_yield DESC;
 ```sql
 SELECT s.sector, s.industry,
        AVG(sig.rsi) AS avg_rsi,
-       AVG(f.trailing_pe) AS avg_pe
+       AVG(f.`trailingPE`) AS avg_pe
 FROM gold.fact_signal_snapshot sig
 JOIN gold.dim_security s ON sig.security_key = s.security_key AND s.is_current = true
 JOIN gold.dim_date d ON sig.date_key = d.date_key
 LEFT JOIN gold.fact_fundamental_snapshot f
   ON sig.security_key = f.security_key AND sig.date_key = f.date_key
-WHERE d.calendar_date = (
-  SELECT MAX(calendar_date) FROM gold.dim_date WHERE is_trading_day = TRUE
+WHERE d.date = (
+  SELECT MAX(date) FROM gold.dim_date WHERE is_trading_day = TRUE
 )
 GROUP BY s.sector, s.industry
 ORDER BY avg_rsi DESC;
@@ -411,6 +412,16 @@ All formulas use industry-standard definitions with citations.
 ## Non-Goals
 
 Tick data, real-time streaming, options, broker integration, autonomous trading, heavy ML, NLP, hourly intraday.
+
+## Roadmap
+
+| Priority | Feature | Description |
+|----------|---------|-------------|
+| High | Congressional trade tracking | Ingest congressional stock trade disclosures (Senate/House). Annotate gold security rows with which congresspeople traded, amounts, and recency. New bronze source + silver enrichment + gold annotations. |
+| High | Stock split detection & adjustment | Detect stock splits from yfinance metadata. Log split events in a bronze table. Verify adjusted prices are consistent post-split. Flag split dates in dim_date. |
+| Medium | Point-in-time fundamentals | Current fundamentals use latest snapshot for all historical dates. SCD2 history in bronze.fundamentals enables true point-in-time PE/EPS per date. |
+| Medium | Factor regression | Regress stock returns against Fama-French 5-factor + momentum. Store factor loadings in gold.fact_factor_exposure. |
+| Low | Sector rotation dashboard | Track sector-level RSI/momentum trends over time. Identify rotation patterns. |
 
 ## Resources
 

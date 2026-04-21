@@ -22,7 +22,7 @@ from pyspark.sql import SparkSession
 from pyspark.sql.types import (
     StructType, StructField, IntegerType, StringType, BooleanType
 )
-from common.config import TABLE_GOLD_DIM_DATE
+from common.config import TABLE_GOLD_DIM_DATE, TABLE_SILVER_SPLITS
 
 
 def build_dim_date(start_year: int = 2006, end_year: int = 2030) -> pd.DataFrame:
@@ -192,6 +192,38 @@ def main():
     )
     spark_df.write.mode("overwrite").saveAsTable(TABLE_GOLD_DIM_DATE)
     print(f"[build_dim_date] Written {len(dim_date)} rows to {TABLE_GOLD_DIM_DATE}")
+
+    # ── Annotate split days from silver.stock_splits ──
+    try:
+        splits_table_exists = spark.catalog.tableExists(TABLE_SILVER_SPLITS)
+        if splits_table_exists:
+            # Add columns if they don't exist
+            existing_cols = {col.name for col in spark.table(TABLE_GOLD_DIM_DATE).schema.fields}
+            if "is_split_day" not in existing_cols:
+                spark.sql(f"ALTER TABLE {TABLE_GOLD_DIM_DATE} ADD COLUMN is_split_day BOOLEAN DEFAULT false")
+            if "split_symbols" not in existing_cols:
+                spark.sql(f"ALTER TABLE {TABLE_GOLD_DIM_DATE} ADD COLUMN split_symbols STRING")
+
+            # Update split day flags
+            spark.sql(f"""
+                MERGE INTO {TABLE_GOLD_DIM_DATE} d
+                USING (
+                    SELECT s.split_date,
+                           true AS is_split_day,
+                           COLLECT_LIST(s.symbol) AS split_symbols
+                    FROM {TABLE_SILVER_SPLITS} s
+                    GROUP BY s.split_date
+                ) splits
+                ON d.date = splits.split_date
+                WHEN MATCHED THEN UPDATE SET
+                    d.is_split_day = splits.is_split_day,
+                    d.split_symbols = splits.split_symbols
+            """)
+            print(f"[build_dim_date] Annotated split days from {TABLE_SILVER_SPLITS}")
+        else:
+            print(f"[build_dim_date] {TABLE_SILVER_SPLITS} not found — skipping split annotations")
+    except Exception as e:
+        print(f"[build_dim_date] Warning: Could not annotate split days: {e}")
 
 
 if __name__ == "__main__":

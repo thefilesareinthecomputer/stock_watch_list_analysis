@@ -77,10 +77,10 @@ def main():
         ),
         scored AS (
             SELECT *,
-                PERCENT_RANK() OVER (ORDER BY COALESCE(change_30d_pct, 0) DESC) AS momentum_pct,
-                PERCENT_RANK() OVER (ORDER BY COALESCE(pe_ratio, 999) ASC) AS value_pct,
-                PERCENT_RANK() OVER (ORDER BY COALESCE(rsi, 50) ASC) AS risk_pct,
-                PERCENT_RANK() OVER (ORDER BY COALESCE(mfi, 50) DESC) AS quality_pct
+                PERCENT_RANK() OVER (PARTITION BY as_of_date ORDER BY COALESCE(change_30d_pct, 0) DESC) AS momentum_pct,
+                PERCENT_RANK() OVER (PARTITION BY as_of_date ORDER BY COALESCE(pe_ratio, 999) ASC) AS value_pct,
+                PERCENT_RANK() OVER (PARTITION BY as_of_date ORDER BY COALESCE(rsi, 50) ASC) AS risk_pct,
+                PERCENT_RANK() OVER (PARTITION BY as_of_date ORDER BY COALESCE(mfi, 50) DESC) AS quality_pct
             FROM signal_data
         )
         SELECT

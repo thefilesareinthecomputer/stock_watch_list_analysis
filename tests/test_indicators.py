@@ -26,6 +26,7 @@ from src.common.indicators import (
     calculate_dividend_yield,
     determine_signal,
     build_signal_row,
+    build_signal_series,
     safe_float,
 )
 
@@ -357,3 +358,91 @@ class TestBuildSignalRow:
         ]
         for key in expected_keys:
             assert key in row, f"Missing key: {key}"
+
+
+class TestBuildSignalSeries:
+    """Tests for vectorized historical signal computation."""
+
+    @pytest.fixture
+    def long_ohlcv(self):
+        """300 days of synthetic OHLCV — enough for warmup (200) + output (100)."""
+        np.random.seed(99)
+        n = 300
+        close = np.cumsum(np.random.randn(n)) + 100
+        df = pd.DataFrame({
+            "open": close + np.random.randn(n) * 0.5,
+            "high": close + np.abs(np.random.randn(n)),
+            "low": close - np.abs(np.random.randn(n)),
+            "close": close,
+            "volume": np.random.randint(1_000_000, 10_000_000, n),
+        })
+        df.index = pd.bdate_range("2024-01-01", periods=n)
+        return df
+
+    def test_returns_dataframe(self, long_ohlcv):
+        result = build_signal_series(long_ohlcv, "TEST", {})
+        assert isinstance(result, pd.DataFrame)
+
+    def test_row_count_after_warmup(self, long_ohlcv):
+        """300 rows in → 200 warmup dropped → 100 rows out."""
+        result = build_signal_series(long_ohlcv, "TEST", {})
+        assert len(result) == 100
+
+    def test_symbol_column(self, long_ohlcv):
+        result = build_signal_series(long_ohlcv, "AAPL", {})
+        assert (result["symbol"] == "AAPL").all()
+
+    def test_required_columns(self, long_ohlcv):
+        result = build_signal_series(long_ohlcv, "TEST", {})
+        required = [
+            "symbol", "as_of_date", "trade_signal", "rsi",
+            "macd", "macd_signal_line", "macd_histogram",
+            "bollinger_upper", "bollinger_lower", "bollinger_pct_b",
+            "bollinger_bandwidth", "obv", "mfi",
+            "last_closing_price", "last_day_change_pct",
+            "change_30d_pct", "change_90d_pct",
+            "ma_50", "ma_200", "ema_50", "ema_200", "atr_14d",
+        ]
+        for col in required:
+            assert col in result.columns, f"Missing column: {col}"
+
+    def test_rsi_bounds(self, long_ohlcv):
+        result = build_signal_series(long_ohlcv, "TEST", {})
+        rsi = result["rsi"].dropna()
+        assert (rsi >= 0).all() and (rsi <= 100).all()
+
+    def test_mfi_bounds(self, long_ohlcv):
+        result = build_signal_series(long_ohlcv, "TEST", {})
+        mfi = result["mfi"].dropna()
+        assert (mfi >= 0).all() and (mfi <= 100).all()
+
+    def test_fundamentals_constant_across_rows(self, long_ohlcv):
+        """Fundamentals should be the same for every row (current snapshot)."""
+        info = {"trailingEps": 5.0, "forwardEps": 5.5,
+                "trailingPE": 20.0, "forwardPE": 18.0,
+                "dividendRate": 2.0, "dividendYield": 0.02}
+        result = build_signal_series(long_ohlcv, "TEST", info)
+        assert result["eps"].nunique() <= 1
+        assert result["pe_ratio"].nunique() <= 1
+
+    def test_insufficient_data_returns_empty(self):
+        """Less than 200 rows → empty DataFrame."""
+        n = 50
+        close = np.cumsum(np.random.randn(n)) + 100
+        df = pd.DataFrame({
+            "open": close, "high": close + 1, "low": close - 1,
+            "close": close, "volume": np.ones(n) * 1e6,
+        })
+        df.index = pd.bdate_range("2024-01-01", periods=n)
+        result = build_signal_series(df, "TEST", {})
+        assert isinstance(result, pd.DataFrame)
+        assert len(result) == 0
+
+    def test_trade_signal_values(self, long_ohlcv):
+        result = build_signal_series(long_ohlcv, "TEST", {})
+        assert set(result["trade_signal"].unique()).issubset({"Buy", "Sell", "Hold"})
+
+    def test_no_extra_rows_from_edge_cases(self, long_ohlcv):
+        """RSI/MFI edge-case handling should not add rows."""
+        result = build_signal_series(long_ohlcv, "TEST", {})
+        assert len(result) == len(long_ohlcv) - 200

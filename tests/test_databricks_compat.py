@@ -6,6 +6,7 @@ Run locally with: pytest tests/ -v
 No Spark or Databricks required — tests validate Python logic only.
 """
 import datetime
+import importlib.util
 import os
 import sys
 
@@ -54,7 +55,7 @@ class TestRowCreation:
     """Verify Row object creation from pandas DataFrames (Databricks Connect fix)."""
 
     @pytest.mark.skipif(
-        sys.modules.get("pyspark") is None,
+        importlib.util.find_spec("pyspark") is None,
         reason="pyspark not installed locally"
     )
     def test_basic_row_conversion(self):
@@ -74,7 +75,7 @@ class TestRowCreation:
         assert rows[1].symbol == "MSFT"
 
     @pytest.mark.skipif(
-        sys.modules.get("pyspark") is None,
+        importlib.util.find_spec("pyspark") is None,
         reason="pyspark not installed locally"
     )
     def test_nan_to_none_conversion(self):

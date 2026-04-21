@@ -207,7 +207,7 @@ FROM stock_analytics.gold.daily_analytics
 WHERE as_of_date = (SELECT MAX(as_of_date) FROM stock_analytics.gold.daily_analytics)
   AND trailing_pe BETWEEN 8 AND 20
   AND dividend_yield > 0.02
-  AND dividend_yield_trap = false
+  AND NOT dividend_yield_trap
   AND payout_ratio < 0.70
   AND return_on_equity > 0.12
   AND debt_to_equity < 2.0
@@ -247,6 +247,8 @@ ORDER BY change_365d_pct DESC;
 - **Sort**: By `change_365d_pct DESC`
 - **Add reference line** at y=0 (break-even)
 - **Interpretation**: Stocks above the SPY line are outperforming the market.
+
+> **Note:** `benchmark_compare` requires SPY and QQQ in your watchlist. Add them to `.env` (`USER_STOCK_WATCH_LIST`) if missing.
 
 ---
 

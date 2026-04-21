@@ -54,7 +54,10 @@ def fetch_fred_series(series_id: str, api_key: str) -> pd.DataFrame | None:
 
 
 def main():
+    # FRED_API_KEY: try env var first (local .env), then sys.argv (Databricks job parameter)
     api_key = os.getenv("FRED_API_KEY", "")
+    if not api_key and len(sys.argv) > 1:
+        api_key = sys.argv[1]
     if not api_key:
         print("[ingest_fred] WARNING: FRED_API_KEY not set. Skipping FRED ingestion.")
         print("[ingest_fred] Get a free key at: https://fred.stlouisfed.org/docs/api/api_key/")

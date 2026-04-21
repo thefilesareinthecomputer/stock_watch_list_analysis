@@ -336,6 +336,7 @@ def main():
     # ── 7. Daily analytics — wide denormalized master table ──
     # Joins Silver signals + Silver prices + Silver fundamentals.
     # One row per (symbol, date). Zero joins needed for ad-hoc exploration.
+    # Includes composite scoring (PERCENT_RANK) and boolean dividend_yield_trap.
     spark.sql(f"""
         CREATE OR REPLACE TABLE {TABLE_GOLD_DAILY_ANALYTICS} AS
         WITH prices AS (
@@ -363,43 +364,62 @@ def main():
                 debtToEquity AS debt_to_equity, currentRatio AS current_ratio,
                 freeCashflow AS free_cashflow
             FROM {TABLE_SILVER_FUNDAMENTALS}
+        ),
+        joined AS (
+            SELECT
+                s.symbol,
+                s.as_of_date,
+                -- Price data
+                p.open, p.high, p.low, p.close, p.volume,
+                -- Technical indicators
+                s.trade_signal,
+                s.rsi,
+                s.macd, s.macd_signal_line, s.macd_histogram,
+                s.bollinger_upper, s.bollinger_lower,
+                s.bollinger_pct_b, s.bollinger_bandwidth,
+                s.obv, s.mfi,
+                s.ma_50, s.ma_200, s.ema_50, s.ema_200,
+                s.atr_14d,
+                -- Returns
+                s.last_day_change_abs, s.last_day_change_pct,
+                s.change_30d_pct, s.change_90d_pct, s.change_365d_pct,
+                s.last_closing_price,
+                -- Fundamentals (aliased to snake_case for usability)
+                f.short_name, f.long_name, f.sector, f.industry,
+                f.country, f.currency, f.exchange,
+                f.market_cap, f.trailing_pe, f.forward_pe, f.price_to_book,
+                f.trailing_eps, f.forward_eps,
+                f.dividend_rate, f.payout_ratio,
+                f.beta, f.profit_margins, f.operating_margins, f.gross_margins,
+                f.revenue_growth, f.earnings_growth,
+                f.return_on_equity, f.return_on_assets,
+                f.debt_to_equity, f.current_ratio, f.free_cashflow,
+                -- Dividend signals (convert DOUBLE trap flag to BOOLEAN)
+                s.dividend_yield, s.dividend_yield_gap,
+                CASE WHEN s.dividend_yield_trap = 1.0 THEN true ELSE false END AS dividend_yield_trap
+            FROM signals s
+            LEFT JOIN prices p
+                ON s.symbol = p.symbol AND s.as_of_date = p.date
+            LEFT JOIN fund f
+                ON s.symbol = f.symbol
+        ),
+        scored AS (
+            SELECT *,
+                PERCENT_RANK() OVER (PARTITION BY as_of_date ORDER BY COALESCE(change_30d_pct, 0) DESC) AS momentum_pct,
+                PERCENT_RANK() OVER (PARTITION BY as_of_date ORDER BY COALESCE(trailing_pe, 999) ASC) AS value_pct,
+                PERCENT_RANK() OVER (PARTITION BY as_of_date ORDER BY COALESCE(rsi, 50) ASC) AS risk_pct,
+                PERCENT_RANK() OVER (PARTITION BY as_of_date ORDER BY COALESCE(mfi, 50) DESC) AS quality_pct
+            FROM joined
         )
         SELECT
-            s.symbol,
-            s.as_of_date,
-            -- Price data
-            p.open, p.high, p.low, p.close, p.volume,
-            -- Technical indicators
-            s.trade_signal,
-            s.rsi,
-            s.macd, s.macd_signal_line, s.macd_histogram,
-            s.bollinger_upper, s.bollinger_lower,
-            s.bollinger_pct_b, s.bollinger_bandwidth,
-            s.obv, s.mfi,
-            s.ma_50, s.ma_200, s.ema_50, s.ema_200,
-            s.atr_14d,
-            -- Returns
-            s.last_day_change_abs, s.last_day_change_pct,
-            s.change_30d_pct, s.change_90d_pct, s.change_365d_pct,
-            s.last_closing_price,
-            -- Fundamentals (aliased to snake_case for usability)
-            f.short_name, f.long_name, f.sector, f.industry,
-            f.country, f.currency, f.exchange,
-            f.market_cap, f.trailing_pe, f.forward_pe, f.price_to_book,
-            f.trailing_eps, f.forward_eps,
-            f.dividend_rate, f.payout_ratio,
-            f.beta, f.profit_margins, f.operating_margins, f.gross_margins,
-            f.revenue_growth, f.earnings_growth,
-            f.return_on_equity, f.return_on_assets,
-            f.debt_to_equity, f.current_ratio, f.free_cashflow,
-            -- Dividend signals (from signals, already computed)
-            s.dividend_yield, s.dividend_yield_gap, s.dividend_yield_trap
-        FROM signals s
-        LEFT JOIN prices p
-            ON s.symbol = p.symbol AND s.as_of_date = p.date
-        LEFT JOIN fund f
-            ON s.symbol = f.symbol
-        ORDER BY s.symbol, s.as_of_date
+            *,
+            (COALESCE(momentum_pct, 0.5) * 0.25 +
+             COALESCE(value_pct, 0.5) * 0.25 +
+             COALESCE(risk_pct, 0.5) * 0.25 +
+             COALESCE(quality_pct, 0.5) * 0.25
+            ) AS composite_score
+        FROM scored
+        ORDER BY symbol, as_of_date
     """)
     print(f"[build_gold] Created/replaced {TABLE_GOLD_DAILY_ANALYTICS}")
 

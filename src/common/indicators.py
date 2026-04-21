@@ -502,3 +502,225 @@ def build_signal_row(
             row[key] = round(value, 4)
 
     return row
+
+
+# ── Vectorized series builder (historical backfill) ────────────────
+
+# Minimum data points needed for the longest indicator (EMA-200)
+WARMUP_PERIOD = 200
+
+
+def build_signal_series(
+    stock_data: pd.DataFrame,
+    symbol: str,
+    info: dict,
+    fundamentals_df: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    """
+    Build a DataFrame of signals for ALL historical dates (after warmup).
+
+    Unlike build_signal_row() which returns one scalar dict for today,
+    this returns one row per date after the warmup period (~200 trading
+    days). Every indicator is computed as a full pandas Series, aligned
+    on the date index.
+
+    Columns match the Silver daily_signals table schema so the result
+    can be written directly via MERGE.
+
+    Args:
+        stock_data: OHLCV DataFrame with DatetimeIndex
+        symbol: Ticker symbol
+        info: Fundamentals dict (used for all dates if fundamentals_df is None)
+        fundamentals_df: Optional DataFrame with per-date fundamentals.
+            Must have columns: as_of_date (date), eps, pe_ratio,
+            forward_eps, forward_pe, dividend_yield, dividend_yield_gap,
+            dividend_yield_trap. When provided, fundamentals are
+            aligned by as_of_date instead of using the current snapshot.
+    snapshot, not point-in-time fundamentals (which would require SCD2
+    historical data we don't have yet).
+    """
+    close = stock_data["close"]
+    volume = stock_data["volume"]
+    high = stock_data["high"]
+    low = stock_data["low"]
+
+    if len(close) < WARMUP_PERIOD:
+        return pd.DataFrame()
+
+    # ── Technical indicators as full Series ──
+
+    # RSI (Wilder's smoothing)
+    delta = close.diff()
+    gain = delta.clip(lower=0).ewm(alpha=1/14, adjust=False).mean()
+    loss = (-delta.clip(upper=0)).ewm(alpha=1/14, adjust=False).mean()
+    rs = gain / loss.replace(0, np.nan)
+    rsi_series = 100 - (100 / (1 + rs))
+    rsi_series = rsi_series.fillna(50)
+    # Handle edge: loss=0 → RSI=100, gain=0 → RSI=0
+    rsi_series = np.where(loss == 0, 100.0, rsi_series)
+    rsi_series = np.where(gain == 0, 0.0, rsi_series)
+    rsi_series = pd.Series(rsi_series, index=close.index)
+
+    # MACD
+    ema12 = close.ewm(span=12, adjust=False).mean()
+    ema26 = close.ewm(span=26, adjust=False).mean()
+    macd_series = ema12 - ema26
+    macd_signal_series = macd_series.ewm(span=9, adjust=False).mean()
+    macd_histogram_series = macd_series - macd_signal_series
+
+    # Bollinger Bands
+    sma20 = close.rolling(window=20).mean()
+    std20 = close.rolling(window=20).std()
+    bb_upper = sma20 + (std20 * 2)
+    bb_lower = sma20 - (std20 * 2)
+    bb_pct_b = (close - bb_lower) / (bb_upper - bb_lower).replace(0, np.nan)
+    bb_bandwidth = (bb_upper - bb_lower) / sma20.replace(0, np.nan)
+
+    # OBV
+    direction = np.sign(close.diff())
+    obv_series = (direction * volume).cumsum()
+
+    # MFI
+    typical_price = (high + low + close) / 3
+    raw_money_flow = typical_price * volume
+    tp_diff = typical_price.diff()
+    positive_mf = raw_money_flow.where(tp_diff > 0, 0.0)
+    negative_mf = raw_money_flow.where(tp_diff < 0, 0.0)
+    pos_sum = positive_mf.rolling(window=14).sum()
+    neg_sum = negative_mf.rolling(window=14).sum()
+    money_ratio = pos_sum / neg_sum.replace(0, np.nan)
+    mfi_series = 100 - (100 / (1 + money_ratio))
+    mfi_series = mfi_series.fillna(50)
+    # Handle edge: neg_sum=0 → MFI=100, pos_sum=0 → MFI=0
+    mfi_series = np.where(neg_sum == 0, 100.0, mfi_series)
+    mfi_series = np.where(pos_sum == 0, 0.0, mfi_series)
+    mfi_series = pd.Series(mfi_series, index=close.index)
+
+    # ATR (Wilder's smoothing)
+    high_low = high - low
+    high_close = np.abs(high - close.shift())
+    low_close = np.abs(low - close.shift())
+    true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+    atr_series = true_range.ewm(alpha=1/14, adjust=False).mean()
+
+    # Moving averages (SMA)
+    ma_50_series = close.rolling(window=50).mean()
+    ma_200_series = close.rolling(window=200).mean()
+
+    # EMAs
+    ema_50_series = close.ewm(span=50, adjust=False).mean()
+    ema_200_series = close.ewm(span=200, adjust=False).mean()
+
+    # ── Price changes as Series ──
+    last_day_change_abs = close.diff(1)
+    last_day_change_pct = close.pct_change(periods=1) * 100
+    change_30d_pct = close.pct_change(periods=21) * 100    # ~21 trading days/month
+    change_90d_pct = close.pct_change(periods=63) * 100     # ~63 trading days/quarter
+    change_365d_pct = close.pct_change(periods=252) * 100   # ~252 trading days/year
+
+    # ── Trade signal (derived from MACD + RSI) ──
+    buy_cond = (macd_histogram_series > 0) & (rsi_series < 70)
+    sell_cond = (macd_histogram_series < 0) & (rsi_series > 30)
+    trade_signal_series = np.where(buy_cond, "Buy",
+                          np.where(sell_cond, "Sell", "Hold"))
+
+    # ── Fundamentals ──
+    if fundamentals_df is not None and not fundamentals_df.empty:
+        # Per-date fundamentals: align on as_of_date
+        fund_dates = pd.to_datetime(fundamentals_df["as_of_date"]).dt.date
+        signal_dates = pd.Series(stock_data.index.date, index=stock_data.index,
+                                 name="as_of_date")
+        fund_aligned = signal_dates.map(
+            dict(zip(fund_dates, range(len(fund_dates)))))
+
+        eps_series = pd.Series(np.nan, index=close.index, dtype=float)
+        pe_ratio_series = pd.Series(np.nan, index=close.index, dtype=float)
+        forward_eps_series = pd.Series(np.nan, index=close.index, dtype=float)
+        forward_pe_series = pd.Series(np.nan, index=close.index, dtype=float)
+        dividend_yield_series = pd.Series(np.nan, index=close.index, dtype=float)
+        dividend_yield_gap_series = pd.Series(np.nan, index=close.index, dtype=float)
+        dividend_yield_trap_series = pd.Series(0.0, index=close.index, dtype=float)
+
+        for i, row in fundamentals_df.iterrows():
+            d = pd.to_datetime(row["as_of_date"]).date()
+            mask = signal_dates == d
+            if mask.any():
+                eps_series.loc[mask] = row.get("eps", np.nan)
+                pe_ratio_series.loc[mask] = row.get("pe_ratio", np.nan)
+                forward_eps_series.loc[mask] = row.get("forward_eps", np.nan)
+                forward_pe_series.loc[mask] = row.get("forward_pe", np.nan)
+                dividend_yield_series.loc[mask] = row.get("dividend_yield", np.nan)
+                dividend_yield_gap_series.loc[mask] = row.get("dividend_yield_gap", np.nan)
+                dividend_yield_trap_series.loc[mask] = row.get("dividend_yield_trap", 0.0)
+    else:
+        # Current snapshot: same values for all dates
+        eps_series = pd.Series(calculate_eps(info), index=close.index)
+        pe_ratio_series = pd.Series(
+            calculate_pe_ratio(info, close.iloc[-1]), index=close.index)
+        dividend_yield_series = pd.Series(
+            calculate_dividend_yield(info, close.iloc[-1]), index=close.index)
+        forward_eps_series = pd.Series(
+            safe_float(info.get("forwardEps")), index=close.index)
+        forward_pe_series = pd.Series(
+            safe_float(info.get("forwardPE")), index=close.index)
+
+        trailing_yield = dividend_yield_series.iloc[0]
+        forward_yield = safe_float(info.get("dividendYield"))
+        if (not np.isnan(trailing_yield) and not np.isnan(forward_yield)):
+            dividend_yield_gap_series = pd.Series(
+                trailing_yield - forward_yield, index=close.index)
+            dividend_yield_trap_series = pd.Series(
+                1.0 if (trailing_yield - forward_yield) > 0.015 else 0.0,
+                index=close.index)
+        else:
+            dividend_yield_gap_series = pd.Series(np.nan, index=close.index)
+            dividend_yield_trap_series = pd.Series(0.0, index=close.index)
+
+    # ── Assemble DataFrame ──
+    # Use .values for all Series to avoid pandas index-alignment issues
+    # when building the DataFrame. as_of_date comes from the DatetimeIndex.
+    result = pd.DataFrame({
+        "symbol": symbol,
+        "as_of_date": stock_data.index.values,
+        "trade_signal": trade_signal_series,
+        "rsi": rsi_series.values,
+        "macd": macd_series.values,
+        "macd_signal_line": macd_signal_series.values,
+        "macd_histogram": macd_histogram_series.values,
+        "last_closing_price": close.values,
+        "bollinger_upper": bb_upper.values,
+        "bollinger_lower": bb_lower.values,
+        "bollinger_pct_b": bb_pct_b.values,
+        "bollinger_bandwidth": bb_bandwidth.values,
+        "obv": obv_series.values,
+        "mfi": mfi_series.values,
+        "eps": eps_series.values,
+        "pe_ratio": pe_ratio_series.values,
+        "forward_eps": forward_eps_series.values,
+        "forward_pe": forward_pe_series.values,
+        "dividend_yield": dividend_yield_series.values,
+        "dividend_yield_gap": dividend_yield_gap_series.values,
+        "dividend_yield_trap": dividend_yield_trap_series.values,
+        "last_day_change_abs": last_day_change_abs.values,
+        "last_day_change_pct": last_day_change_pct.values,
+        "change_30d_pct": change_30d_pct.values,
+        "change_90d_pct": change_90d_pct.values,
+        "change_365d_pct": change_365d_pct.values,
+        "ma_50": ma_50_series.values,
+        "ma_200": ma_200_series.values,
+        "ema_50": ema_50_series.values,
+        "ema_200": ema_200_series.values,
+        "atr_14d": atr_series.values,
+    })
+
+    # Drop warmup rows (NaN-heavy)
+    result = result.iloc[WARMUP_PERIOD:].copy().reset_index(drop=True)
+
+    if result.empty:
+        return result
+
+    # Round numeric columns to 4 decimal places
+    numeric_cols = result.select_dtypes(include=[np.number]).columns
+    result[numeric_cols] = result[numeric_cols].round(4)
+
+    return result

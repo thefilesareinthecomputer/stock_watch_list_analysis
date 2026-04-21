@@ -50,10 +50,12 @@ FROM stock_analytics.gold.daily_analytics
 WHERE as_of_date = (SELECT MAX(as_of_date) FROM stock_analytics.gold.daily_analytics)
   AND trailing_pe BETWEEN 8 AND 18
   AND dividend_yield > 0.02
-  AND dividend_yield_trap = false
+  AND NOT dividend_yield_trap
   AND payout_ratio < 0.75
 ORDER BY dividend_yield DESC;
 ```
+
+> **Note:** `dividend_yield_trap` is BOOLEAN in `daily_analytics` (true/false). In `silver.daily_signals` it is DOUBLE (1.0/0.0).
 
 ### Sector Rotation Overview
 
@@ -85,13 +87,18 @@ LIMIT 15;
 ### MACD Crossovers Today
 
 ```sql
+-- Window functions cannot appear in WHERE — use a CTE
+WITH crossovers AS (
+    SELECT symbol, as_of_date, macd, macd_signal_line, macd_histogram,
+           LAG(macd_histogram) OVER (PARTITION BY symbol ORDER BY as_of_date) AS prev_macd_hist
+    FROM stock_analytics.gold.daily_analytics
+    WHERE as_of_date = (SELECT MAX(as_of_date) FROM stock_analytics.gold.daily_analytics)
+      AND macd_histogram IS NOT NULL
+)
 SELECT symbol, macd, macd_signal_line, macd_histogram
-FROM stock_analytics.gold.daily_analytics
-WHERE as_of_date = (SELECT MAX(as_of_date) FROM stock_analytics.gold.daily_analytics)
-  AND macd_histogram IS NOT NULL
-  AND SIGN(macd_histogram) != SIGN(
-      LAG(macd_histogram) OVER (PARTITION BY symbol ORDER BY as_of_date)
-  );
+FROM crossovers
+WHERE SIGN(macd_histogram) != SIGN(prev_macd_hist)
+   OR (prev_macd_hist IS NULL AND macd_histogram IS NOT NULL);
 ```
 
 ### Risk-Return Scatter (for charting)
@@ -170,6 +177,8 @@ FROM stock_analytics.gold.benchmark_compare
 ORDER BY change_365d_pct DESC;
 ```
 
+> **Note:** `benchmark_compare` requires SPY and QQQ in your watchlist. Add them to `.env` if missing.
+
 ### Sector Momentum Over Time (Weekly Average RSI)
 
 ```sql
@@ -191,20 +200,22 @@ ORDER BY week DESC, avg_rsi DESC;
 
 These use the fact + dimension tables for cross-referencing different business processes.
 
+> **Column name note:** `dim_date` uses `date` (not `calendar_date`). `dim_security` uses camelCase (`shortName`, `sector`, `industry`). `fact_market_price_daily` uses `return_1d/5d/21d/63d/252d` (not 30d/90d). `fact_fundamental_snapshot` uses camelCase yfinance names (`trailingPE`, `dividendYield`, etc.).
+
 ### Momentum vs Valuation by Sector
 
 ```sql
 SELECT s.sector, s.industry,
        AVG(sig.rsi) AS avg_rsi,
-       AVG(f.trailing_pe) AS avg_pe,
-       AVG(f.dividend_yield) AS avg_yield,
+       AVG(f.`trailingPE`) AS avg_pe,
+       AVG(f.`dividendYield`) AS avg_yield,
        COUNT(*) AS stock_count
 FROM stock_analytics.gold.fact_signal_snapshot sig
 JOIN stock_analytics.gold.dim_security s ON sig.security_key = s.security_key AND s.is_current = true
 JOIN stock_analytics.gold.dim_date d ON sig.date_key = d.date_key
 LEFT JOIN stock_analytics.gold.fact_fundamental_snapshot f
     ON sig.security_key = f.security_key AND sig.date_key = f.date_key
-WHERE d.calendar_date = (SELECT MAX(calendar_date) FROM stock_analytics.gold.dim_date WHERE is_trading_day = TRUE)
+WHERE d.date = (SELECT MAX(date) FROM stock_analytics.gold.dim_date WHERE is_trading_day = TRUE)
 GROUP BY s.sector, s.industry
 ORDER BY avg_rsi DESC;
 ```
@@ -213,9 +224,9 @@ ORDER BY avg_rsi DESC;
 
 ```sql
 SELECT
-    d.calendar_date, s.symbol, s.sector,
-    p.close, p.return_30d,
-    f.trailing_pe, f.dividend_yield, f.market_cap,
+    d.date, s.symbol, s.sector,
+    p.close, p.return_21d,
+    f.`trailingPE`, f.`dividendYield`, f.`marketCap`,
     sig.rsi, sig.composite_score
 FROM stock_analytics.gold.fact_signal_snapshot sig
 JOIN stock_analytics.gold.dim_security s ON sig.security_key = s.security_key AND s.is_current = true
@@ -224,7 +235,7 @@ LEFT JOIN stock_analytics.gold.fact_market_price_daily p
     ON sig.security_key = p.security_key AND sig.date_key = p.date_key
 LEFT JOIN stock_analytics.gold.fact_fundamental_snapshot f
     ON sig.security_key = f.security_key AND sig.date_key = f.date_key
-WHERE d.calendar_date = (SELECT MAX(calendar_date) FROM stock_analytics.gold.dim_date WHERE is_trading_day = TRUE)
+WHERE d.date = (SELECT MAX(date) FROM stock_analytics.gold.dim_date WHERE is_trading_day = TRUE)
 ORDER BY sig.composite_score DESC;
 ```
 
