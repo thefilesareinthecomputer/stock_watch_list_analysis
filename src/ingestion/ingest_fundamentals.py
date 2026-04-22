@@ -303,6 +303,12 @@ def main():
             print(f"[ingest_fundamentals] Table exists but lacks SCD2 columns. Rebuilding with SCD2 schema.")
             spark.sql(f"DROP TABLE IF EXISTS {TABLE_BRONZE_FUNDAMENTALS}")
             table_exists = False
+        else:
+            # Add any new columns from FUNDAMENTALS_NUMERIC_FIELDS that don't exist yet
+            for field in FUNDAMENTALS_NUMERIC_FIELDS:
+                if field not in existing_cols:
+                    print(f"[ingest_fundamentals] Adding missing column: {field}")
+                    spark.sql(f"ALTER TABLE {TABLE_BRONZE_FUNDAMENTALS} ADD COLUMN `{field}` DOUBLE")
 
     if table_exists:
         apply_scd2(spark, rows, run_id, ingest_ts)

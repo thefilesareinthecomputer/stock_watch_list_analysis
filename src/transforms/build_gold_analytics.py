@@ -406,7 +406,9 @@ def main():
                 f.debt_to_equity, f.current_ratio, f.free_cashflow,
                 -- Dividend signals (convert DOUBLE trap flag to BOOLEAN)
                 s.dividend_yield, s.dividend_yield_gap,
-                CASE WHEN s.dividend_yield_trap = 1.0 THEN true ELSE false END AS dividend_yield_trap
+                CASE WHEN s.dividend_yield_trap = 1.0 THEN true ELSE false END AS dividend_yield_trap,
+                -- PIT pe_ratio from signals (used for composite scoring)
+                s.pe_ratio
             FROM signals s
             LEFT JOIN prices p
                 ON s.symbol = p.symbol AND s.as_of_date = p.date
