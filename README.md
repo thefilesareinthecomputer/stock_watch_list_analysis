@@ -17,13 +17,29 @@
 
 ---
 
+<p align="center">
+  <img src="static-assets/stock-dashboard.png" alt="Stock Analytics Dashboard" width="700">
+</p>
+
+<p align="center">
+  <img src="static-assets/databricks-sql.png" alt="Databricks SQL Editor" width="700"><br>
+  <em>Query results in Databricks SQL Editor</em>
+</p>
+
+<p align="center">
+  <img src="static-assets/deployment.png" alt="Databricks Deployment" width="700"><br>
+  <em>Pipeline deployment in Databricks</em>
+</p>
+
+---
+
 ## How to Read the Gold Data
 
-You have 8 gold tables. Here's what each one is for and how to use it.
+There are 8 gold tables. Here's what each one is for and how to use it.
 
 ### Start Here: `gold.daily_analytics`
 
-One big table. Zero joins. Every column for every ticker on every date. This is your primary exploration surface.
+One big table. Zero joins. Every column for every ticker on every date. The primary exploration surface.
 
 ```sql
 SELECT * FROM gold.daily_analytics
@@ -77,7 +93,7 @@ A stock can be #1 in momentum but #20 in value — the composite balances them. 
 | `MA200_CROSS_BELOW` | Price crossed below the 200-day moving average | Classic bearish signal — long-term trend turning down |
 | `DIVIDEND_YIELD_TRAP` | Current dividend yield is >1.5pp above the 5-year average | The yield is high because the price dropped, not because dividends increased. Verify payout ratio < 75% before buying. |
 
-**Important:** Alerts are point-in-time snapshots, rebuilt each pipeline run. They reflect the *latest* trading day only. For historical alert patterns, query `gold.signal_history` and compute your own thresholds.
+**Important:** Alerts are point-in-time snapshots, rebuilt each pipeline run. They reflect the *latest* trading day only. For historical alert patterns, query `gold.signal_history` and compute thresholds.
 
 ### What Is Congress Doing on My Stocks?
 
@@ -122,7 +138,7 @@ ORDER BY c.last_trade_date DESC;
 | **3 months** | MA-200 converging, composite scores starting to be meaningful | 365-day returns, long-term trend analysis |
 | **1 year** | Everything. Full backtest capability, MA-200 reliable, all return windows valid | Factor regression (roadmap) |
 
-The pipeline uses `period="max"` for prices, so yfinance provides all available history on first run. The warmup period (200 trading days ≈ 10 months) is dropped for EMA-200 convergence. After first run, you'll have years of historical data — but EMA-200 and 252-day returns need time to stabilize.
+The pipeline uses `period="max"` for prices, so yfinance provides all available history on first run. The warmup period (200 trading days ≈ 10 months) is dropped for EMA-200 convergence. After first run, years of historical data are available — but EMA-200 and 252-day returns need time to stabilize.
 
 ---
 
@@ -252,7 +268,7 @@ A single wide table joining signals + prices + fundamentals. **Zero joins needed
 | `gold.benchmark_compare` | Each ticker vs SPY/QQQ 30d/90d/365d returns | Relative performance |
 | `gold.portfolio_candidates` | Bucketed: top_momentum, oversold, value_dividend, low_volatility | Stock screening |
 | `gold.congressional_trades_summary` | Congressional trades per symbol/office | "What is Congress trading?" |
-| `gold.trade_log` | Manual trade journal (INSERT via SQL) | Tracking your own trades |
+| `gold.trade_log` | Manual trade journal (INSERT via SQL) | Tracking trades |
 
 ---
 
@@ -489,7 +505,7 @@ WHERE as_of_date = (SELECT MAX(as_of_date) FROM gold.signal_alerts);
 1. Pipeline runs daily after market close
 2. `build_gold_analytics` computes alert thresholds against the latest snapshot + signal history
 3. `gold.signal_alerts` is replaced with that day's alerts
-4. You query the table to see what fired
+4. Query the table to see what fired
 
 ### Alert Types and Thresholds
 
@@ -536,7 +552,7 @@ WHERE as_of_date = (SELECT MAX(as_of_date) FROM gold.signal_alerts);
 ```bash
 git clone <repo-url> && cd stock_watch_list_analysis
 cp .env.example .env
-# Edit .env: add your tickers and FRED_API_KEY
+# Edit .env: add tickers and FRED_API_KEY
 ```
 
 ### 2. Local Development

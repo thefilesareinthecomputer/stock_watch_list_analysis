@@ -1,15 +1,11 @@
 """
 Central configuration for the stock analytics pipeline.
 
-Ticker policy: USER_STOCK_WATCH_LIST env var is the single source of truth.
-config.py reads it via dotenv (.env file) with a fallback default for
-CI/Databricks where .env is absent.
-
-Add new tickers to .env — no source code changes needed.
+Ticker policy: tickers.txt is the single source of truth.
+One ticker per line, # comments ok. File deploys with bundle to Databricks.
 """
 import os
 
-# Load .env file if python-dotenv is available (present locally, absent on Databricks)
 try:
     from dotenv import load_dotenv
     load_dotenv()
@@ -52,19 +48,20 @@ TABLE_GOLD_DAILY_ANALYTICS = f"{CATALOG}.{SCHEMA_GOLD}.daily_analytics"
 TABLE_GOLD_CONGRESSIONAL_SUMMARY = f"{CATALOG}.{SCHEMA_GOLD}.congressional_trades_summary"
 
 # -------------------------------------------------------------------
-# WATCHLIST — Single source of truth: USER_STOCK_WATCH_LIST env var
-# Fallback default used when .env is absent (CI, Databricks serverless).
-# Keep under ~200 for Free Edition quota.
+# WATCHLIST — Single source of truth: src/common/tickers.txt
+# Deploys with bundle. One ticker per line, # comments ok.
 # -------------------------------------------------------------------
-_DEFAULT_TICKERS = [
-    "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA",
-    "META", "TSLA", "BRK-B", "JPM", "V",
-    "JNJ", "WMT", "PG", "MA", "HD",
-    "XOM", "UNH", "BAC", "PFE", "ABBV",
-]
+def _load_tickers():
+    try:
+        _dir = os.path.dirname(os.path.abspath(__file__))
+    except NameError:
+        _dir = os.path.join(os.getcwd(), "src", "common")
+    path = os.path.join(_dir, "tickers.txt")
+    with open(path) as f:
+        return [line.strip() for line in f if line.strip() and not line.startswith("#")]
 
-_env_tickers = os.getenv("USER_STOCK_WATCH_LIST", "")
-TICKERS = [t.strip() for t in _env_tickers.split(",") if t.strip()] or _DEFAULT_TICKERS
+
+TICKERS = _load_tickers()
 
 # Benchmark tickers for relative performance (always included in pipeline)
 BENCHMARK_TICKERS = ["SPY", "QQQ"]
@@ -78,6 +75,7 @@ FUNDAMENTALS_NUMERIC_FIELDS = [
     "earningsGrowth", "returnOnAssets", "returnOnEquity", "totalRevenue", "grossProfits",
     "ebitda", "netIncomeToCommon", "totalCash", "totalDebt", "totalCashPerShare",
     "debtToEquity", "currentRatio", "operatingCashflow", "freeCashflow",
+    "fiveYearAvgDividendYield",
     "sharesOutstanding", "floatShares", "bookValue", "enterpriseToRevenue",
     "enterpriseToEbitda", "52WeekChange", "targetMeanPrice", "targetMedianPrice",
     "targetHighPrice", "targetLowPrice", "numberOfAnalystOpinions",

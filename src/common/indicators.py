@@ -657,9 +657,13 @@ def build_signal_series(
                 pe_ratio_series.loc[mask] = row.get("pe_ratio", np.nan)
                 forward_eps_series.loc[mask] = row.get("forward_eps", np.nan)
                 forward_pe_series.loc[mask] = row.get("forward_pe", np.nan)
-                dividend_yield_series.loc[mask] = row.get("dividend_yield", np.nan)
-                dividend_yield_gap_series.loc[mask] = row.get("dividend_yield_gap", np.nan)
-                dividend_yield_trap_series.loc[mask] = row.get("dividend_yield_trap", 0.0)
+                dy = row.get("dividend_yield", np.nan)
+                dividend_yield_series.loc[mask] = dy
+                # Compute dividend_yield_gap from trailing yield vs 5-year avg
+                five_yr_avg = row.get("five_year_avg_yield", np.nan)
+                if not np.isnan(dy) and not np.isnan(five_yr_avg):
+                    dividend_yield_gap_series.loc[mask] = dy - five_yr_avg
+                    dividend_yield_trap_series.loc[mask] = 1.0 if (dy - five_yr_avg) > 0.015 else 0.0
     else:
         # Current snapshot: same values for all dates
         eps_series = pd.Series(calculate_eps(info), index=close.index)

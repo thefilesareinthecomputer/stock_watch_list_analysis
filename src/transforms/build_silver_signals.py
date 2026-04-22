@@ -68,14 +68,22 @@ def main():
                     bf.trailingPE AS pe_ratio,
                     bf.forwardEps AS forward_eps,
                     bf.forwardPE AS forward_pe,
-                    bf.dividendYield AS dividend_yield
+                    bf.dividendYield AS dividend_yield,
+                    bf.fiveYearAvgDividendYield AS five_year_avg_yield,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY sd.symbol, sd.as_of_date
+                        ORDER BY bf.effective_from DESC
+                    ) AS rn
                 FROM {TABLE_BRONZE_FUNDAMENTALS} bf
                 INNER JOIN price_dates sd
                     ON bf.symbol = sd.symbol
                     AND bf.effective_from <= CAST(sd.as_of_date AS STRING)
                     AND (bf.effective_to IS NULL OR bf.effective_to > CAST(sd.as_of_date AS STRING))
             )
-            SELECT * FROM pit
+            SELECT symbol, as_of_date, eps, pe_ratio, forward_eps,
+                   forward_pe, dividend_yield, five_year_avg_yield
+            FROM pit
+            WHERE rn = 1
             ORDER BY symbol, as_of_date
         """).toPandas()
         if not pit_fundamentals.empty:
