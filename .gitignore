@@ -18,8 +18,12 @@ venv/
 Thumbs.db
 app_generated_files/
 .pytest_cache/
-.claude/
-CLAUDE.md
-databricks.yml
 notes/
-archive/
+__archive/
+
+# Private watchlist — real list stays local; tickers.example.txt is the public starter
+src/common/tickers.txt
+
+# Claude Code — per-device, not shared
+.claude/inbox/
+.claude/settings.local.json

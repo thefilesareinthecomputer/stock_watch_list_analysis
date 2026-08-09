@@ -1,7 +1,8 @@
 """
 Central configuration for the stock analytics pipeline.
 
-Ticker policy: tickers.txt is the single source of truth.
+Ticker policy: src/common/tickers.txt is the single source of truth (private, gitignored).
+A fresh clone falls back to the tracked tickers.example.txt starter list.
 One ticker per line, # comments ok. File deploys with bundle to Databricks.
 """
 import os
@@ -57,6 +58,8 @@ def _load_tickers():
     except NameError:
         _dir = os.path.join(os.getcwd(), "src", "common")
     path = os.path.join(_dir, "tickers.txt")
+    if not os.path.exists(path):
+        path = os.path.join(_dir, "tickers.example.txt")
     with open(path) as f:
         return [line.strip() for line in f if line.strip() and not line.startswith("#")]
 

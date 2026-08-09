@@ -1,0 +1,199 @@
+bundle:
+  name: stock-analytics
+
+# tickers.txt is gitignored (private watchlist); force it into the deploy sync
+# so the real list runs on Databricks instead of falling back to the example.
+sync:
+  include:
+    - src/common/tickers.txt
+
+# Single source of truth for the FRED key is .env. At deploy, bridge it in with:
+#   BUNDLE_VAR_fred_api_key="$FRED_API_KEY" databricks bundle deploy
+# Empty (var unset) means FRED ingestion just skips - the job still succeeds.
+variables:
+  fred_api_key:
+    description: "FRED API key, supplied at deploy via BUNDLE_VAR_fred_api_key from .env"
+    default: ""
+  alert_email:
+    description: "Failure-notification email, supplied at deploy via BUNDLE_VAR_alert_email from .env"
+    default: ""
+
+workspace:
+  host: https://dbc-fc3cf8bd-4b59.cloud.databricks.com
+
+
+resources:
+  jobs:
+    stock_analytics_pipeline:
+      name: "stock_analytics_daily"
+
+      parameters:
+        - name: fred_api_key
+          default: ${var.fred_api_key}
+
+      environments:
+        - environment_key: "default"
+          spec:
+            environment_version: "3"
+            dependencies:
+              - yfinance>=0.2.30
+              - numpy>=1.24
+              - pandas>=2.0
+              - python-dotenv>=1.0
+              - exchange_calendars>=4.0
+              - fredapi>=0.5
+
+      tasks:
+        - task_key: setup_catalog
+          spark_python_task:
+            python_file: ./src/setup/create_catalog.py
+          environment_key: "default"
+
+        # ── Ingestion (parallel after setup) ──
+        - task_key: ingest_prices
+          depends_on:
+            - task_key: setup_catalog
+          spark_python_task:
+            python_file: ./src/ingestion/ingest_prices.py
+          environment_key: "default"
+
+        - task_key: ingest_fundamentals
+          depends_on:
+            - task_key: setup_catalog
+          spark_python_task:
+            python_file: ./src/ingestion/ingest_fundamentals.py
+          environment_key: "default"
+
+        - task_key: ingest_fred
+          depends_on:
+            - task_key: setup_catalog
+          spark_python_task:
+            python_file: ./src/ingestion/ingest_fred.py
+            parameters:
+              - "{{job.parameters.fred_api_key}}"
+          environment_key: "default"
+
+        - task_key: ingest_fama_french
+          depends_on:
+            - task_key: setup_catalog
+          spark_python_task:
+            python_file: ./src/ingestion/ingest_fama_french.py
+          environment_key: "default"
+
+        - task_key: ingest_congressional
+          depends_on:
+            - task_key: setup_catalog
+          spark_python_task:
+            python_file: ./src/ingestion/ingest_congressional.py
+          environment_key: "default"
+
+        - task_key: ingest_splits
+          depends_on:
+            - task_key: setup_catalog
+          spark_python_task:
+            python_file: ./src/ingestion/ingest_splits.py
+          environment_key: "default"
+
+        # ── Silver (3 parallel tasks) ──
+        - task_key: build_silver_prices
+          depends_on:
+            - task_key: ingest_prices
+          spark_python_task:
+            python_file: ./src/transforms/build_silver_prices.py
+          environment_key: "default"
+
+        - task_key: build_silver_fundamentals
+          depends_on:
+            - task_key: ingest_fundamentals
+          spark_python_task:
+            python_file: ./src/transforms/build_silver_fundamentals.py
+          environment_key: "default"
+
+        - task_key: build_silver_signals
+          depends_on:
+            - task_key: build_silver_prices
+            - task_key: build_silver_fundamentals
+          spark_python_task:
+            python_file: ./src/transforms/build_silver_signals.py
+          environment_key: "default"
+
+        - task_key: build_silver_congressional
+          depends_on:
+            - task_key: ingest_congressional
+          spark_python_task:
+            python_file: ./src/transforms/build_silver_congressional.py
+          environment_key: "default"
+
+        - task_key: build_silver_splits
+          depends_on:
+            - task_key: ingest_splits
+          spark_python_task:
+            python_file: ./src/transforms/build_silver_splits.py
+          environment_key: "default"
+
+        # ── Gold dimensions (parallel with Silver signals) ──
+        - task_key: build_gold_dim_date
+          depends_on:
+            - task_key: setup_catalog
+            - task_key: build_silver_splits
+          spark_python_task:
+            python_file: ./src/transforms/build_gold_dim_date.py
+          environment_key: "default"
+
+        - task_key: build_gold_dim_security
+          depends_on:
+            - task_key: build_silver_fundamentals
+          spark_python_task:
+            python_file: ./src/transforms/build_gold_dim_security.py
+          environment_key: "default"
+
+        # ── Gold facts (depend on Silver + dimensions) ──
+        - task_key: build_gold_fact_market
+          depends_on:
+            - task_key: build_silver_prices
+            - task_key: build_gold_dim_security
+            - task_key: build_gold_dim_date
+          spark_python_task:
+            python_file: ./src/transforms/build_gold_fact_market.py
+          environment_key: "default"
+
+        - task_key: build_gold_fact_fundamentals
+          depends_on:
+            - task_key: build_silver_fundamentals
+            - task_key: build_gold_dim_security
+            - task_key: build_gold_dim_date
+          spark_python_task:
+            python_file: ./src/transforms/build_gold_fact_fundamentals.py
+          environment_key: "default"
+
+        - task_key: build_gold_fact_signals
+          depends_on:
+            - task_key: build_silver_signals
+            - task_key: build_gold_dim_security
+            - task_key: build_gold_dim_date
+          spark_python_task:
+            python_file: ./src/transforms/build_gold_fact_signals.py
+          environment_key: "default"
+
+        # ── Gold serving tables (depend on Silver signals) ──
+        - task_key: build_gold_analytics
+          depends_on:
+            - task_key: build_silver_signals
+          spark_python_task:
+            python_file: ./src/transforms/build_gold_analytics.py
+          environment_key: "default"
+
+        - task_key: build_gold_congressional
+          depends_on:
+            - task_key: build_silver_congressional
+          spark_python_task:
+            python_file: ./src/transforms/build_gold_congressional.py
+          environment_key: "default"
+
+      schedule:
+        quartz_cron_expression: "0 0 22 ? * MON-FRI"
+        timezone_id: America/New_York
+
+      email_notifications:
+        on_failure:
+          - ${var.alert_email}

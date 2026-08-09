@@ -552,7 +552,9 @@ WHERE as_of_date = (SELECT MAX(as_of_date) FROM gold.signal_alerts);
 ```bash
 git clone <repo-url> && cd stock_watch_list_analysis
 cp .env.example .env
-# Edit .env: add tickers and FRED_API_KEY
+# Edit .env: add FRED_API_KEY and Databricks creds
+cp src/common/tickers.example.txt src/common/tickers.txt
+# Edit src/common/tickers.txt: your watchlist (one ticker per line, gitignored/private)
 ```
 
 ### 2. Local Development
