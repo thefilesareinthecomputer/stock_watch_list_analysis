@@ -1,0 +1,28 @@
+[project]
+name = "stock-watch-list-analysis"
+version = "0.1.0"
+description = "Databricks medallion lakehouse for equity analytics"
+requires-python = ">=3.11"
+dependencies = [
+    "yfinance==1.3.0",
+    "numpy==2.4.4",
+    "pandas==3.0.2",
+    "python-dotenv>=1.0",
+    "exchange-calendars==4.13.2",
+    "fredapi==0.5.2",
+    "requests==2.33.1",
+]
+
+# pyspark and pytest run the tests locally and in CI. On Databricks, Spark is
+# provided by the serverless runtime and pipeline deps come from databricks.yml,
+# so neither this file nor uv.lock is used there.
+[dependency-groups]
+dev = [
+    "pyspark==4.1.1",
+    "pytest==9.0.3",
+]
+
+# src/ is executed by path (Databricks spark_python_task), not installed as a
+# package, so uv manages only the dependency environment.
+[tool.uv]
+package = false

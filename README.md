@@ -540,38 +540,53 @@ WHERE as_of_date = (SELECT MAX(as_of_date) FROM gold.signal_alerts);
 
 ## Quick Start
 
-### Prerequisites
+### Prerequisites (fresh machine)
 
+- [uv](https://docs.astral.sh/uv/) - Python and dependency manager (`brew install uv`).
+  It installs the pinned Python (3.12, from `.python-version`) itself; no system Python needed.
 - Databricks CLI (`brew install databricks`)
-- Terraform (`brew install terraform`)
-- Python 3.11+
+- Terraform (`brew install terraform`) - only for a manual `bundle deploy`
+- JDK 17 for the local Spark tests (`brew install openjdk@17`). Without it those tests skip.
 - FRED API key ([free](https://fred.stlouisfed.org/docs/api/api_key.html))
 
-### 1. Configure
+### 1. Clone and configure
 
 ```bash
 git clone <repo-url> && cd stock_watch_list_analysis
+
+# Config and secrets (gitignored):
 cp .env.example .env
-# Edit .env: add FRED_API_KEY and Databricks creds
+# Edit .env: set FRED_API_KEY and ALERT_EMAIL
+
+# Private watchlist (gitignored - does NOT sync via git; recreate on each device):
 cp src/common/tickers.example.txt src/common/tickers.txt
-# Edit src/common/tickers.txt: your watchlist (one ticker per line, gitignored/private)
+# Edit src/common/tickers.txt: your watchlist, one ticker per line
+
+# Databricks auth - OAuth, nothing stored in the repo (per device):
+databricks auth login --host https://dbc-fc3cf8bd-4b59.cloud.databricks.com
 ```
 
-### 2. Local Development
+### 2. Install and test
 
 ```bash
-python -m venv stocks-venv && source stocks-venv/bin/activate
-pip install -r requirements.txt
-pytest tests/ -v
+uv sync                              # builds .venv from pyproject.toml + uv.lock
+export JAVA_HOME=/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home
+uv run pytest tests/ -v
 ```
 
-### 3. Deploy and Run
+### 3. Deploy
+
+Work on `develop`; `main` is the deploy trigger. Merge `develop` into `main` and push - GitHub
+Actions then runs test -> validate -> deploy to Databricks. CI credentials are GitHub repo secrets
+(`DATABRICKS_HOST`, `DATABRICKS_TOKEN`, `FRED_API_KEY`, `ALERT_EMAIL`); see CLAUDE.md.
+
+Manual deploy (optional, from a machine with the OAuth profile):
 
 ```bash
+set -a; source .env; set +a
+BUNDLE_VAR_fred_api_key="$FRED_API_KEY" BUNDLE_VAR_alert_email="$ALERT_EMAIL" \
 DATABRICKS_TF_EXEC_PATH=$(which terraform) \
-DATABRICKS_TF_VERSION=$(terraform version -json | jq -r '.terraform_version') \
 databricks bundle deploy
-
 databricks bundle run stock_analytics_pipeline
 ```
 

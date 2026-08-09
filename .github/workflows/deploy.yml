@@ -11,13 +11,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
         with:
-          python-version: "3.12"
-      - name: Install dependencies
-        run: pip install -r requirements.txt
+          enable-cache: true
       - name: Run unit tests
-        run: pytest tests/ -v
+        run: uv run pytest tests/ -v
 
   validate:
     runs-on: ubuntu-latest

@@ -12,9 +12,10 @@ read it before touching the pipeline. This file is operational guidance only.
 
 ## Build / test / deploy
 ```bash
-python -m venv stocks-venv && source stocks-venv/bin/activate
-pip install -r requirements.txt
-pytest tests/ -v
+uv sync                              # builds .venv from pyproject.toml + uv.lock
+uv run pytest tests/ -v              # Spark tests need a JDK on JAVA_HOME
+# JDK for local Spark tests (else they skip): brew install openjdk@17
+# export JAVA_HOME=/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home
 
 set -a; source .env; set +a          # load FRED_API_KEY, ALERT_EMAIL from .env
 BUNDLE_VAR_fred_api_key="$FRED_API_KEY" \

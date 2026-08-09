@@ -11,13 +11,16 @@
 - [ ] Profile is device-local (never in git). Both machines use the same tracked databricks.yml.
 - [ ] After login here, assistant runs `databricks bundle validate` to confirm sync.include + FRED var.
 
-## On the laptop (next session)
-- [ ] Pull the branch.
-- [ ] Recreate the private watchlist: `cp src/common/tickers.example.txt src/common/tickers.txt`,
-      then adjust to the real strategy list. It is gitignored, so it will NOT arrive via git -
-      each device keeps its own copy and changes must be mirrored manually.
-- [ ] `databricks.yml` now arrives via git (newly tracked) - no need to recreate it.
-- [ ] Set up the Databricks CLI with OAuth (see below) - per device, not synced via git.
+## On the laptop (next session) - full setup is in README "Quick Start"
+- [ ] Pull `develop`.
+- [ ] Install tools: `brew install uv databricks terraform openjdk@17`.
+- [ ] `uv sync` (builds .venv; installs pinned Python 3.12 itself - no system Python needed).
+- [ ] Recreate the private watchlist: `cp src/common/tickers.example.txt src/common/tickers.txt`
+      then adjust. It is gitignored, so it does NOT arrive via git - mirror changes manually.
+- [ ] `cp .env.example .env`, set `FRED_API_KEY` and `ALERT_EMAIL`.
+- [ ] `databricks auth login --host <workspace>` (OAuth, per device; databricks.yml arrives via git).
+- [ ] Run tests: `export JAVA_HOME=/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home`
+      then `uv run pytest tests/ -v` (without JAVA_HOME the Spark tests skip).
 
 ## CI/CD model (GitHub Actions, .github/workflows/deploy.yml)
 - Branch model: work on `develop`, `main` is stable + the deploy trigger. One Databricks env.
