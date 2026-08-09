@@ -502,7 +502,7 @@ class TestAlertLogicSpark:
                     0.03, float(dy_gap), float(dy_trap),  # dividend_yield, gap, trap
                     1.5, 1.0,  # last_day_change_abs, pct
                     3.0, 7.0, 15.0,  # change_30d, 90d, 365d
-                    float(price - 2), float(price - 5),  # ma_50, ma_200
+                    float(price - 2), float(ma_200),  # ma_50, ma_200
                     float(price - 1), float(price - 3),  # ema_50, ema_200
                     2.5,  # atr_14d
                 ))
@@ -651,7 +651,6 @@ class TestAlertLogicSpark:
                 END AS alert_type
             FROM ma200_lag
             WHERE prev_close IS NOT NULL
-              AND as_of_date = (SELECT MAX(as_of_date) FROM silver_daily_signals)
         """).collect()
 
         # AAPL: price starts at 148 (< 150 MA200), ends at 154 (> 150)
@@ -825,13 +824,13 @@ class TestGoldAnalyticsSQL:
         rows = [
             ("AAPL", "2025-01-10", "Hold", 55.0, 0.5, 0.4, 0.1, 150.0,
              160.0, 140.0, 0.5, 0.13, 1000.0, 60.0, 5.0, 30.0, 5.5, 27.0,
-             0.015, 0.0, 0.0, 1.5, 100.0, 145.0, 3.3, 5.0, 10.0, 148.0, 145.0, 147.0, 146.0, 2.5),
+             0.015, 0.0, 0.0, 1.5, 145.0, 3.3, 5.0, 10.0, 148.0, 145.0, 147.0, 146.0, 2.5),
             ("MSFT", "2025-01-10", "Buy", 45.0, 0.3, 0.2, 0.1, 420.0,
              430.0, 410.0, 0.5, 0.05, 800.0, 70.0, 8.0, 52.5, 8.8, 47.7,
-             0.008, 0.0, 0.0, 2.0, 420.0, 415.0, 4.5, 8.0, 15.0, 418.0, 415.0, 417.0, 416.0, 4.0),
+             0.008, 0.0, 0.0, 2.0, 415.0, 4.5, 8.0, 15.0, 418.0, 415.0, 417.0, 416.0, 4.0),
             ("TSLA", "2025-01-10", "Sell", 75.0, -0.2, 0.1, -0.3, 250.0,
              270.0, 230.0, 0.5, 0.16, 1200.0, 40.0, 2.0, 125.0, 2.2, 113.6,
-             0.0, 0.0, 0.0, -3.0, 250.0, 255.0, -5.0, -10.0, 20.0, 255.0, 260.0, 253.0, 258.0, 8.0),
+             0.0, 0.0, 0.0, -3.0, 255.0, -5.0, -10.0, 20.0, 255.0, 260.0, 253.0, 258.0, 8.0),
         ]
         schema = StructType([
             StructField("symbol", StringType(), False),
