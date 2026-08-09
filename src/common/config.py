@@ -52,7 +52,23 @@ TABLE_GOLD_CONGRESSIONAL_SUMMARY = f"{CATALOG}.{SCHEMA_GOLD}.congressional_trade
 # WATCHLIST — Single source of truth: src/common/tickers.txt
 # Deploys with bundle. One ticker per line, # comments ok.
 # -------------------------------------------------------------------
+def _parse_tickers(text):
+    # Accept commas or newlines interchangeably, so the same value works in
+    # .env, a GitHub secret, or a file with no conversion.
+    parts = text.replace(",", "\n").splitlines()
+    return [t.strip().upper() for t in parts
+            if t.strip() and not t.strip().startswith("#")]
+
+
 def _load_tickers():
+    # 1. WATCHLIST env var (local .env) — single source, comma or newline.
+    raw = os.getenv("WATCHLIST", "")
+    if raw.strip():
+        tickers = _parse_tickers(raw)
+        if tickers:
+            return tickers
+    # 2. tickers.txt file (Databricks reads this; CI materializes it from the secret).
+    # 3. tickers.example.txt fallback for a fresh clone.
     try:
         _dir = os.path.dirname(os.path.abspath(__file__))
     except NameError:
@@ -61,7 +77,7 @@ def _load_tickers():
     if not os.path.exists(path):
         path = os.path.join(_dir, "tickers.example.txt")
     with open(path) as f:
-        return [line.strip() for line in f if line.strip() and not line.startswith("#")]
+        return _parse_tickers(f.read())
 
 
 TICKERS = _load_tickers()
