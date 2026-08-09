@@ -1,14 +1,9 @@
 # TODO
 
-## On this (desktop) device - staged for the user to run
-- [ ] Untrack the now-private real watchlist (keeps the local file, stops tracking it):
-      `git rm --cached src/common/tickers.txt`
+## On this (desktop) device - DONE
 - [x] Edit `.env.example`: added `FRED_API_KEY` (done by user).
-- [ ] Stage and commit the tidy-up:
-      `git add CLAUDE.md README.md .gitignore .env.example src/common/config.py src/common/tickers.example.txt databricks.yml tasks/`
-      `git rm --cached src/common/tickers.txt`
-      `git commit -m "chore: privatize watchlist; track databricks.yml (FRED key -> .env); de-stale docs"`
-- [ ] Push: `git push` (branch already tracks origin/feature/upgrade-stock-pipeline).
+- [x] Untracked the private watchlist (`git rm --cached src/common/tickers.txt`), committed and
+      pushed as `6e325a2` on `feature/upgrade-stock-pipeline`. Databricks CLI OAuth profile set up.
 
 ## Databricks CLI auth - OAuth, per device (no PAT)
 - [ ] Run on THIS machine and the laptop (opens a browser, writes ~/.databrickscfg):
