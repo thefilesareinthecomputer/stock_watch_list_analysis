@@ -19,9 +19,16 @@
 - [ ] `databricks.yml` now arrives via git (newly tracked) - no need to recreate it.
 - [ ] Set up the Databricks CLI with OAuth (see below) - per device, not synced via git.
 
-## Before next deploy
-- [ ] Add `ALERT_EMAIL=c3por2d2atat@gmail.com` to `.env` (and a placeholder in `.env.example`).
-      If unset, `on_failure` resolves to an empty string and the deploy is rejected.
+## CI/CD model (GitHub Actions, .github/workflows/deploy.yml)
+- Branch model: work on `develop`, `main` is stable + the deploy trigger. One Databricks env.
+- Triggers: push/PR to `develop` or `main` runs test + validate; push to `main` ALSO deploys
+  (`databricks bundle deploy`, `default` target). Deploy updates the job def; the pipeline runs
+  on its daily cron (22:00 MON-FRI) or a manual `databricks bundle run`.
+- CI auth + config are GitHub REPO SECRETS (not vars, not env-secrets - jobs declare no environment):
+  `DATABRICKS_HOST`, `DATABRICKS_TOKEN` (PAT reused from dotenv), `FRED_API_KEY`, `ALERT_EMAIL`.
+  Added 2026-08-09. FRED key + email reach the deploy via `BUNDLE_VAR_*` from those secrets.
+- Local dev stays keyless (OAuth U2M). Only CI uses the token.
+- [x] `ALERT_EMAIL` added to dotenv + example (done by user).
 
 ## Verify later (next `databricks bundle deploy`)
 - [ ] Confirm the real `tickers.txt` (not the example) reached the Databricks job. If not, the
