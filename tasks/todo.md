@@ -33,12 +33,18 @@
 - Local dev stays keyless (OAuth U2M). Only CI uses the token.
 - [x] `ALERT_EMAIL` added to dotenv + example (done by user).
 
-## Verify later (next `databricks bundle deploy`)
-- [ ] Confirm the real `tickers.txt` (not the example) reached the Databricks job. If not, the
-      `sync.include` in `databricks.yml` did not override `.gitignore`. (Only item not yet proven.)
-- [x] FRED key + alert email variable resolution CONFIRMED via `databricks bundle validate`:
-      BUNDLE_VAR values substitute into the job parameter default and on_failure. Runtime still
-      relies on the ingest_fred task reading `{{job.parameters.fred_api_key}}` from argv.
+## Known gap - CI deploy uses the EXAMPLE watchlist
+- The CI deploy (GitHub Actions) checks out only git contents, and `tickers.txt` is gitignored,
+  so the deployed job falls back to `tickers.example.txt`. Harmless while example == real.
+- WHEN the real list diverges: materialize `tickers.txt` in the deploy job from a GitHub secret
+  (add a `WATCHLIST` secret, write the file before `databricks bundle deploy`). Not yet done.
+- A manual deploy from a machine that has the real `tickers.txt` DOES ship it (sync.include).
+
+## Verified end to end (2026-08-09)
+- [x] FRED key + alert email BUNDLE_VAR resolution confirmed via validate.
+- [x] Full pipeline green on main push: test (uv) -> validate -> deploy. "Deployment complete!"
+- [x] Note: deploy updates the job definition; the pipeline itself runs on its daily cron
+      (22:00 MON-FRI) or a manual `databricks bundle run stock_analytics_pipeline`.
 
 ## Done this session
 - FRED key no longer hardcoded in `databricks.yml`. It flows from `.env` at deploy via the

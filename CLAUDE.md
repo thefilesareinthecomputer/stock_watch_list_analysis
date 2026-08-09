@@ -58,9 +58,12 @@ Solo, one Databricks environment. Work on `develop`; `main` is stable and the de
 Watchlist source of truth: `src/common/tickers.txt` (one ticker per line, `#` comments ok).
 This file is **gitignored** (private — real strategy list). A fresh clone falls back to the
 tracked `tickers.example.txt` starter. `config.py::_load_tickers()` prefers `tickers.txt`,
-else the example. Because the real file is gitignored, `databricks.yml` force-includes it via
-`sync.include` so the deploy ships the real list, not the example. Benchmarks `SPY`/`QQQ` are
-always added on top. To edit the watchlist, change `tickers.txt` (and mirror on other devices).
+else the example. `databricks.yml` force-includes `tickers.txt` via `sync.include`, so a **manual**
+deploy from a machine that has the file ships the real list. The **CI deploy** (GitHub Actions)
+only checks out git contents, so `tickers.txt` is absent there and the deployed job falls back to
+`tickers.example.txt`. Keep the example current, or (when the real list diverges) materialize
+`tickers.txt` in CI from a GitHub secret before deploy. Benchmarks `SPY`/`QQQ` are always added on
+top. To edit the watchlist, change `tickers.txt` (and mirror on other devices).
 
 ## Code size — track after major changes to prevent bloat
 ```bash
