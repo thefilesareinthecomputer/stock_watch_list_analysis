@@ -37,6 +37,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: databricks/setup-cli@main
+      - name: Materialize private watchlist from secret
+        env:
+          WATCHLIST: ${{ secrets.WATCHLIST }}
+        run: |
+          if [ -n "$WATCHLIST" ]; then
+            echo "$WATCHLIST" | tr ',' '\n' | tr -d ' \r' | sed '/^$/d' > src/common/tickers.txt
+            echo "Wrote $(wc -l < src/common/tickers.txt) tickers to tickers.txt"
+          else
+            echo "WATCHLIST secret empty; deploy falls back to tickers.example.txt"
+          fi
       - name: Deploy bundle
         run: databricks bundle deploy
         env:

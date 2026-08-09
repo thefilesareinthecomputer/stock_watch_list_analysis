@@ -33,12 +33,11 @@
 - Local dev stays keyless (OAuth U2M). Only CI uses the token.
 - [x] `ALERT_EMAIL` added to dotenv + example (done by user).
 
-## Known gap - CI deploy uses the EXAMPLE watchlist
-- The CI deploy (GitHub Actions) checks out only git contents, and `tickers.txt` is gitignored,
-  so the deployed job falls back to `tickers.example.txt`. Harmless while example == real.
-- WHEN the real list diverges: materialize `tickers.txt` in the deploy job from a GitHub secret
-  (add a `WATCHLIST` secret, write the file before `databricks bundle deploy`). Not yet done.
-- A manual deploy from a machine that has the real `tickers.txt` DOES ship it (sync.include).
+## Watchlist in CI - via WATCHLIST secret
+- CI deploy materializes `src/common/tickers.txt` from the `WATCHLIST` repo secret (comma- or
+  newline-separated) before `databricks bundle deploy`. Keep the secret in sync with local.
+- If the secret is empty/unset, deploy falls back to `tickers.example.txt`.
+- [ ] Add the `WATCHLIST` repo secret in GitHub (else the deployed job uses the example list).
 
 ## Verified end to end (2026-08-09)
 - [x] FRED key + alert email BUNDLE_VAR resolution confirmed via validate.
