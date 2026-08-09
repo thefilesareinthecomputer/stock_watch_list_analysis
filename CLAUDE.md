@@ -28,6 +28,15 @@ No private values live in `databricks.yml`; the FRED key and failure-notificatio
 `.env` at deploy via `BUNDLE_VAR_fred_api_key` / `BUNDLE_VAR_alert_email`. Auth is OAuth (`databricks
 auth login`), no PAT. Set `ALERT_EMAIL` in `.env` or failure emails go nowhere.
 
+## Branch & deploy workflow
+Solo, one Databricks environment. Work on `develop`; `main` is stable and the deploy trigger.
+- Push/PR to `develop` or `main` runs CI (`.github/workflows/deploy.yml`): `test` then `bundle validate`.
+- Push to `main` also runs `bundle deploy` (`default` target). Deploy is gated behind green `test`.
+- Deploy updates the job definition only; the pipeline runs on its daily cron or `bundle run`.
+- **Ship:** merge `develop` -> `main` and push. Never commit straight to `main`.
+- CI auth/config live in GitHub repo secrets (`DATABRICKS_HOST`, `DATABRICKS_TOKEN`, `FRED_API_KEY`,
+  `ALERT_EMAIL`), fed to deploy as `BUNDLE_VAR_*`. Local dev stays keyless (OAuth); only CI holds a token.
+
 ## Databricks Free Edition gotchas (these break the build)
 1. `__file__` undefined — `spark_python_task` runs via `exec()`. Use `try/except` + `os.getcwd()` fallback.
 2. `spark.createDataFrame(pandas_df)` fails (PySpark Connect ChunkedArray bug). Build Row-based with string dates + SQL `CAST`.
