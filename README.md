@@ -5,30 +5,49 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Python-3.11+-blue.svg" alt="Python">
+  <img src="https://img.shields.io/badge/Python-3.12-blue.svg" alt="Python">
   <img src="https://img.shields.io/badge/Databricks-Free%20Edition-orange.svg" alt="Databricks">
   <img src="https://img.shields.io/badge/Pipeline-19%20tasks-green.svg" alt="Tasks">
   <img src="https://img.shields.io/badge/Layers-Bronze%20%E2%86%92%20Silver%20%E2%86%92%20Gold-brightgreen.svg" alt="Medallion">
 </p>
 
 <p align="center">
-  <a href="#quick-start">Quick Start</a> &middot; <a href="#how-to-read-the-gold-data">Reading the Data</a> &middot; <a href="#tables">Tables</a> &middot; <a href="#sample-queries">Queries</a> &middot; <a href="#visualizations-in-databricks">Visualizations</a> &middot; <a href="#indicator-formulas">Formulas</a>
+  <a href="#what-this-is">What This Is</a> &middot; <a href="#quick-start">Quick Start</a> &middot; <a href="#how-to-read-the-gold-data">Reading the Data</a> &middot; <a href="#tables">Tables</a> &middot; <a href="#sample-queries">Queries</a> &middot; <a href="#visualizations-in-databricks">Visualizations</a> &middot; <a href="#indicator-formulas">Formulas</a>
 </p>
 
 ---
 
+## What this is
+
+A medallion lakehouse for US equities. It ingests daily prices, fundamentals,
+macro series and corporate actions; computes technical and fundamental
+indicators **point-in-time**; and lands a Kimball star schema plus serving
+tables you can query directly or build dashboards on.
+
+It runs on Databricks Free Edition - serverless, one scheduled job, no
+always-on compute - which makes it cheap to reproduce and a reasonable
+reference for anyone building a small lakehouse on a budget.
+
+**Status.** The pipeline is stable: 19 tasks, daily on a cron, ~18 minutes a
+run. The *scoring* methodology is mid-redesign and its rankings have not been
+validated against forward returns. Treat the output as a research surface, not
+as advice - see [`SPEC.md`](SPEC.md) for the architecture and
+[`tasks/SPEC-RECOMMENDATION-ENGINE.md`](tasks/SPEC-RECOMMENDATION-ENGINE.md)
+for where it is going.
+
 <p align="center">
-  <img src="static-assets/stock-dashboard.png" alt="Stock Analytics Dashboard" width="700">
+  <img src="static-assets/pipeline-runs.png" alt="Daily job run history in Databricks" width="700"><br>
+  <em>Run history for <code>stock_analytics_daily</code> - 19 tasks, per-task status, ~18 min per run</em>
 </p>
 
 <p align="center">
-  <img src="static-assets/databricks-sql.png" alt="Databricks SQL Editor" width="700"><br>
-  <em>Query results in Databricks SQL Editor</em>
+  <img src="static-assets/databricks-sql.png" alt="Querying the gold layer in the Databricks SQL editor" width="700"><br>
+  <em>Querying <code>gold.watchlist_ranked</code> in the SQL editor</em>
 </p>
 
 <p align="center">
-  <img src="static-assets/deployment.png" alt="Databricks Deployment" width="700"><br>
-  <em>Pipeline deployment in Databricks</em>
+  <img src="static-assets/stock-dashboard.png" alt="Watchlist metrics dashboard" width="700"><br>
+  <em>Watchlist metrics dashboard - being rebuilt around recommendations and their evidence</em>
 </p>
 
 ---

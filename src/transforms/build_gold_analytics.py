@@ -23,6 +23,7 @@ except NameError:
 sys.path.insert(0, os.path.normpath(_src_dir))
 
 from pyspark.sql import SparkSession
+from scoring.components import percentile_sql
 from common.config import (
     TABLE_SILVER_SIGNALS,
     TABLE_SILVER_PRICES,
@@ -59,11 +60,10 @@ def main():
         scored AS (
             SELECT
                 *,
-                -- PERCENT_RANK normalization (0-1) per dimension
-                PERCENT_RANK() OVER (ORDER BY COALESCE(change_30d_pct, 0) DESC) AS momentum_pct,
-                PERCENT_RANK() OVER (ORDER BY COALESCE(pe_ratio, 999) ASC) AS value_pct,
-                PERCENT_RANK() OVER (ORDER BY COALESCE(rsi, 50) ASC) AS risk_pct,
-                PERCENT_RANK() OVER (ORDER BY COALESCE(mfi, 50) DESC) AS quality_pct
+                -- PERCENT_RANK normalization (0-1) per dimension.
+                -- Directions defined once in scoring.components; see its
+                -- direction contract before changing any ORDER BY.
+                {percentile_sql()}
             FROM latest
         )
         SELECT
@@ -417,10 +417,7 @@ def main():
         ),
         scored AS (
             SELECT *,
-                PERCENT_RANK() OVER (PARTITION BY as_of_date ORDER BY COALESCE(change_30d_pct, 0) DESC) AS momentum_pct,
-                PERCENT_RANK() OVER (PARTITION BY as_of_date ORDER BY COALESCE(pe_ratio, 999) ASC) AS value_pct,
-                PERCENT_RANK() OVER (PARTITION BY as_of_date ORDER BY COALESCE(rsi, 50) ASC) AS risk_pct,
-                PERCENT_RANK() OVER (PARTITION BY as_of_date ORDER BY COALESCE(mfi, 50) DESC) AS quality_pct
+                {percentile_sql(partition_by='as_of_date')}
             FROM joined
         )
         SELECT
