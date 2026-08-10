@@ -40,6 +40,8 @@ TABLE_GOLD_FACT_MARKET = f"{CATALOG}.{SCHEMA_GOLD}.fact_market_price_daily"
 TABLE_GOLD_FACT_FUNDAMENTALS = f"{CATALOG}.{SCHEMA_GOLD}.fact_fundamental_snapshot"
 TABLE_GOLD_FACT_SIGNALS = f"{CATALOG}.{SCHEMA_GOLD}.fact_signal_snapshot"
 TABLE_GOLD_WATCHLIST = f"{CATALOG}.{SCHEMA_GOLD}.watchlist_ranked"
+# Append-only. Never CREATE OR REPLACE — see src/scoring/snapshot.py.
+TABLE_GOLD_RECOMMENDATIONS = f"{CATALOG}.{SCHEMA_GOLD}.recommendations"
 TABLE_GOLD_SIGNAL_ALERTS = f"{CATALOG}.{SCHEMA_GOLD}.signal_alerts"
 TABLE_GOLD_SIGNAL_HISTORY = f"{CATALOG}.{SCHEMA_GOLD}.signal_history"
 TABLE_GOLD_BENCHMARK_COMPARE = f"{CATALOG}.{SCHEMA_GOLD}.benchmark_compare"

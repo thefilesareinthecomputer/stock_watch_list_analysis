@@ -24,11 +24,14 @@ sys.path.insert(0, os.path.normpath(_src_dir))
 
 from pyspark.sql import SparkSession
 from scoring.components import percentile_sql
+from scoring.snapshot import create_sql, insert_sql
+from common.run_context import new_run_id
 from common.config import (
     TABLE_SILVER_SIGNALS,
     TABLE_SILVER_PRICES,
     TABLE_SILVER_FUNDAMENTALS,
     TABLE_GOLD_WATCHLIST,
+    TABLE_GOLD_RECOMMENDATIONS,
     TABLE_GOLD_SIGNAL_ALERTS,
     TABLE_GOLD_SIGNAL_HISTORY,
     TABLE_GOLD_BENCHMARK_COMPARE,
@@ -117,6 +120,20 @@ def main():
         ORDER BY composite_score DESC
     """)
     print(f"[build_gold] Created/replaced {TABLE_GOLD_WATCHLIST}")
+
+    # ── 1b. Recommendation snapshot (APPEND-ONLY) ─────────────
+    # Every other gold table is rebuilt each run, so nothing else remembers what
+    # was recommended yesterday. First write wins per (as_of_date,
+    # methodology_version); a re-run is a no-op rather than a rewrite.
+    run_id = new_run_id()
+    spark.sql(create_sql(TABLE_GOLD_RECOMMENDATIONS, TABLE_GOLD_WATCHLIST, run_id))
+    spark.sql(insert_sql(TABLE_GOLD_RECOMMENDATIONS, TABLE_GOLD_WATCHLIST, run_id))
+    snapshot_rows = spark.sql(
+        f"SELECT COUNT(*) AS n FROM {TABLE_GOLD_RECOMMENDATIONS} "
+        f"WHERE _run_id = '{run_id}'"
+    ).collect()[0]["n"]
+    print(f"[build_gold] Snapshotted {snapshot_rows} rows to "
+          f"{TABLE_GOLD_RECOMMENDATIONS} (0 means already recorded)")
 
     # ── 2. Signal alerts ─────────────────────────────────────
     # Alerts use signal_history (full time series) for LAG-based crossover detection.

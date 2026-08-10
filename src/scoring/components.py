@@ -26,6 +26,13 @@ SPEC-RECOMMENDATION-ENGINE.md P4 replaces them with realized volatility and
 fundamentals-derived quality.
 """
 
+# Bump whenever a component's input, direction or weight changes. Snapshots are
+# immutable per (as_of_date, methodology_version), so a bump writes new rows
+# alongside the old ones instead of restating history. v1 is the first version
+# whose directions are correct and tested; the inverted scoring that preceded it
+# was never snapshotted, so no history is misattributed to v1.
+METHODOLOGY_VERSION = "v1"
+
 # name -> (ORDER BY argument, why this direction)
 COMPONENTS = {
     # Larger 30-day return is better momentum.
