@@ -42,7 +42,10 @@ def select_sql(source, run_id, version=METHODOLOGY_VERSION):
             {cols},
             '{version}' AS methodology_version,
             '{run_id}' AS _run_id,
-            CURRENT_TIMESTAMP() AS _snapshot_ts
+            -- No parentheses: CURRENT_TIMESTAMP is a function in Spark but a
+            -- bare keyword in DuckDB, and the bare form works in both. The SQL
+            -- here has to execute unchanged on either engine.
+            CURRENT_TIMESTAMP AS _snapshot_ts
         FROM {source}
     """
 

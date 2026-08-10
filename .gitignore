@@ -20,7 +20,7 @@ app_generated_files/
 .pytest_cache/
 notes/
 __archive/
-
+_relay.md
 # Private watchlist — real list stays local; tickers.example.txt is the public starter
 src/common/tickers.txt
 # Validation cache — derived, and holds the private symbols
