@@ -20,14 +20,15 @@ uv run pytest tests/ -v              # Spark tests need a JDK on JAVA_HOME
 set -a; source .env; set +a          # load FRED_API_KEY, ALERT_EMAIL from .env
 BUNDLE_VAR_fred_api_key="$FRED_API_KEY" \
 BUNDLE_VAR_alert_email="$ALERT_EMAIL" \
-DATABRICKS_TF_EXEC_PATH=/opt/homebrew/bin/terraform \
-DATABRICKS_TF_VERSION=1.14.8 \
 databricks bundle deploy
 databricks bundle run stock_analytics_pipeline
 ```
 No private values live in `databricks.yml`; the FRED key and failure-notification email flow from
 `.env` at deploy via `BUNDLE_VAR_fred_api_key` / `BUNDLE_VAR_alert_email`. Auth is OAuth (`databricks
 auth login`), no PAT. Set `ALERT_EMAIL` in `.env` or failure emails go nowhere.
+Bundles run on Terraform under the hood, but the CLI downloads its own (`databricks bundle debug
+terraform` reports which). No local terraform install is needed; `DATABRICKS_TF_EXEC_PATH` and
+`DATABRICKS_TF_VERSION` are for air-gapped use only.
 
 ## Branch & deploy workflow
 Solo, one Databricks environment. Work on `develop`; `main` is stable and the deploy trigger.
@@ -62,7 +63,9 @@ else the example. `databricks.yml` force-includes `tickers.txt` via `sync.includ
 deploy from a machine that has the file ships the real list. The **CI deploy** materializes
 `tickers.txt` from the `WATCHLIST` repo secret (comma- or newline-separated) before deploying;
 keep that secret in sync with your local `tickers.txt`. If the secret is empty, the deploy falls
-back to `tickers.example.txt`. Benchmarks `SPY`/`QQQ` are always added on top. To edit the watchlist, change `tickers.txt` (and mirror on other devices).
+back to `tickers.example.txt`. Benchmarks `SPY`/`QQQ` are always added on top.
+To edit the watchlist, change `WATCHLIST` in `.env`, then run `uv run python scripts/seed_tickers.py`
+to materialize `tickers.txt` for a manual deploy. Mirror the change to the `WATCHLIST` repo secret.
 
 ## Code size — track after major changes to prevent bloat
 ```bash

@@ -35,13 +35,21 @@ resources:
         - environment_key: "default"
           spec:
             environment_version: "3"
+            # Pinned so the job installs a known set instead of whatever is
+            # newest at run time. numpy is held at the environment_version "3"
+            # base version on purpose: its pyarrow 15.0.2 requires numpy<2, and
+            # pyarrow is not upgraded here. Raising numpy to 2.x breaks Arrow.
             dependencies:
-              - yfinance>=0.2.30
-              - numpy>=1.24
-              - pandas>=2.0
-              - python-dotenv>=1.0
-              - exchange_calendars>=4.0
-              - fredapi>=0.5
+              - yfinance==1.3.0
+              - numpy==1.26.4
+              - pandas==3.0.2
+              - python-dotenv==1.2.2
+              - exchange_calendars==4.13.2
+              - fredapi==0.5.2
+              # ingest_congressional.py imports requests; declared rather than
+              # borrowed from the base image. Held at the base version, so this
+              # installs nothing new.
+              - requests==2.32.2
 
       tasks:
         - task_key: setup_catalog
