@@ -9,7 +9,81 @@ Empty list = all checks passed.
 """
 import pandas as pd
 import numpy as np
-from typing import List
+from datetime import date
+from typing import Dict, List, Set, Tuple
+
+
+# ── Freshness ──────────────────────────────────────────────────────
+# A dead or failed ticker contributes no rows and never fails the job, so
+# staleness is invisible by default. This gate makes absence loud.
+#
+# Tiered deliberately. A hard gate across ~300 symbols against an unofficial API
+# means routine red runs from single-ticker flakiness, then alert fatigue, then
+# someone disables the gate and it protects nothing. So: hard-fail whatever a
+# decision actually rests on, threshold the rest, and never drop silently.
+STALE_TOLERANCE = 0.02
+
+
+def last_trading_session(reference: date, calendar: str = "XNYS") -> date:
+    """Most recent exchange session on or before `reference`."""
+    import exchange_calendars as xc
+
+    cal = xc.get_calendar(calendar)
+    ts = pd.Timestamp(reference)
+    sessions = cal.sessions_in_range(ts - pd.Timedelta(days=10), ts)
+    if len(sessions) == 0:
+        raise ValueError(f"No {calendar} sessions in the 10 days to {reference}")
+    return sessions[-1].date()
+
+
+def check_freshness(
+    max_dates: Dict[str, str],
+    expected_session: date,
+    critical: Set[str],
+    tolerance: float = STALE_TOLERANCE,
+) -> Tuple[List[str], List[str]]:
+    """Compare each symbol's latest data against the expected session.
+
+    max_dates: symbol -> latest as_of_date ("YYYY-MM-DD"). A symbol absent from
+               this mapping produced no rows at all, which is the failure mode
+               that otherwise passes silently.
+    critical:  symbols a decision rests on - held or currently recommended.
+               Any staleness here is an error regardless of the tolerance.
+
+    Returns (errors, warnings). A non-empty errors list must fail the run.
+    """
+    expected = str(expected_session)
+    universe = set(max_dates) | set(critical)
+    stale = sorted(
+        s for s in universe
+        if max_dates.get(s) is None or str(max_dates[s]) < expected
+    )
+    if not stale:
+        return [], []
+
+    stale_critical = sorted(set(stale) & set(critical))
+    stale_other = [s for s in stale if s not in critical]
+
+    errors, warnings = [], []
+    if stale_critical:
+        errors.append(
+            f"{len(stale_critical)} held/recommended symbol(s) stale as of "
+            f"{expected}: {', '.join(stale_critical)}"
+        )
+
+    non_critical_total = len(universe) - len(critical)
+    if non_critical_total > 0:
+        rate = len(stale_other) / non_critical_total
+        detail = (f"{len(stale_other)}/{non_critical_total} "
+                  f"({rate:.1%}) stale as of {expected}: "
+                  f"{', '.join(stale_other[:20])}"
+                  f"{' ...' if len(stale_other) > 20 else ''}")
+        if rate > tolerance:
+            errors.append(f"Stale rate above {tolerance:.0%} - {detail}")
+        elif stale_other:
+            warnings.append(f"Quarantined - {detail}")
+
+    return errors, warnings
 
 
 def check_not_empty(df: pd.DataFrame, name: str) -> List[str]:

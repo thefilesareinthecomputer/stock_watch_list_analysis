@@ -23,10 +23,15 @@ except NameError:
 sys.path.insert(0, os.path.normpath(_src_dir))
 
 from pyspark.sql import SparkSession
+from datetime import date
+
 from scoring.components import percentile_sql
 from scoring.snapshot import create_sql, insert_sql
 from common.run_context import new_run_id
+from common.quality import check_freshness, last_trading_session
 from common.config import (
+    TICKERS,
+    BENCHMARK_TICKERS,
     TABLE_SILVER_SIGNALS,
     TABLE_SILVER_PRICES,
     TABLE_SILVER_FUNDAMENTALS,
@@ -39,6 +44,11 @@ from common.config import (
     TABLE_GOLD_TRADE_LOG,
     TABLE_GOLD_DAILY_ANALYTICS,
 )
+
+
+# How deep the recommendation list goes for gating purposes. These are the names
+# a decision could rest on tonight, so staleness in any of them is a hard fail.
+RECOMMENDED_DEPTH = 20
 
 
 def main():
@@ -120,6 +130,38 @@ def main():
         ORDER BY composite_score DESC
     """)
     print(f"[build_gold] Created/replaced {TABLE_GOLD_WATCHLIST}")
+
+    # ── 1a. Freshness gate ────────────────────────────────────
+    # Runs BEFORE the snapshot on purpose: a snapshot is immutable, so a day
+    # recorded on stale data stays wrong forever. Fail first, record second.
+    max_dates = {
+        r["symbol"]: (str(r["d"]) if r["d"] is not None else None)
+        for r in spark.sql(
+            f"SELECT symbol, MAX(as_of_date) AS d FROM {TABLE_SILVER_SIGNALS} "
+            f"GROUP BY symbol"
+        ).collect()
+    }
+    # Symbols that produced no rows at all never appear above - the silent
+    # failure this gate exists to catch - so seed the configured universe.
+    for ticker in set(TICKERS) | set(BENCHMARK_TICKERS):
+        max_dates.setdefault(ticker, None)
+
+    recommended = {
+        r["symbol"] for r in spark.sql(
+            f"SELECT symbol FROM {TABLE_GOLD_WATCHLIST} "
+            f"ORDER BY composite_rank LIMIT {RECOMMENDED_DEPTH}"
+        ).collect()
+    }
+    errors, warnings = check_freshness(
+        max_dates, last_trading_session(date.today()), recommended
+    )
+    for warning in warnings:
+        print(f"[build_gold] FRESHNESS WARNING: {warning}")
+    if errors:
+        raise RuntimeError(
+            "Freshness gate failed; nothing snapshotted. "
+            + " | ".join(errors)
+        )
 
     # ── 1b. Recommendation snapshot (APPEND-ONLY) ─────────────
     # Every other gold table is rebuilt each run, so nothing else remembers what
