@@ -43,6 +43,12 @@
     "reason": "Civitas Resources merged into SM Energy; 1.45 SM shares per CIVI share",
     "source": "https://www.sm-energy.com/investors/news-events/press-releases/detail/364/sm-energy-closes-merger-with-civitas-resources"
   },
+  "BRKB": {
+    "successor": "BRK-B",
+    "date": null,
+    "reason": "Not a valid symbol - a formatting error rather than a corporate action. Berkshire Hathaway class B is BRK-B on yfinance; BRKB returns no data",
+    "source": null
+  },
   "TGTG": {
     "successor": null,
     "date": null,
