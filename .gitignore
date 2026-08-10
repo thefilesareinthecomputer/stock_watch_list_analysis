@@ -23,6 +23,8 @@ __archive/
 
 # Private watchlist — real list stays local; tickers.example.txt is the public starter
 src/common/tickers.txt
+# Validation cache — derived, and holds the private symbols
+src/common/.tickers_validated.json
 
 # Claude Code — per-device, not shared
 .claude/inbox/

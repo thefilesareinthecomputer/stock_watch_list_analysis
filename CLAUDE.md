@@ -64,7 +64,9 @@ deploy from a machine that has the file ships the real list. The **CI deploy** m
 `tickers.txt` from the `WATCHLIST` repo secret (comma- or newline-separated) before deploying;
 keep that secret in sync with your local `tickers.txt`. If the secret is empty, the deploy falls
 back to `tickers.example.txt`. Benchmarks `SPY`/`QQQ` are always added on top.
-To edit the watchlist, change `WATCHLIST` in `.env`, then run `uv run python scripts/seed_tickers.py`
+To edit the watchlist, change `WATCHLIST` in `.env`, then run `uv run python scripts/watchlist.py seed`
+(and `... check` to confirm every symbol still resolves on yfinance - dead tickers contribute no rows
+and never fail the job; retired ones are explained by `src/common/ticker_migrations.json`)
 to materialize `tickers.txt` for a manual deploy. Mirror the change to the `WATCHLIST` repo secret.
 
 ## Code size — track after major changes to prevent bloat

@@ -1,0 +1,52 @@
+{
+  "_comment": "Retired tickers and what they became. Populated when scripts/watchlist.py check finds a symbol with no data and the cause is confirmed. successor null means the security ceased to exist (cash acquisition, or never a valid US listing). Dates are the first session the old symbol stopped trading.",
+
+  "CHK": {
+    "successor": "EXE",
+    "date": "2024-10-02",
+    "reason": "Merged with Southwestern Energy; renamed Expand Energy Corporation",
+    "source": "https://investors.expandenergy.com/news-releases/news-release-details/chesapeake-energy-and-southwestern-energy-complete-merger-and"
+  },
+  "SQ": {
+    "successor": "XYZ",
+    "date": "2025-01-21",
+    "reason": "Block, Inc. ticker change from SQ to XYZ; NYSE listing unchanged",
+    "source": "https://investors.block.xyz/investor-news/news-details/2025/Block-Announces-Ticker-Symbol-Change-to-XYZ-To-Report-Fourth-Quarter-Results/default.aspx"
+  },
+  "ITCI": {
+    "successor": null,
+    "date": "2025-04-02",
+    "reason": "Acquired by Johnson & Johnson for $132.00/share cash; delisted from Nasdaq",
+    "source": "https://www.jnj.com/media-center/press-releases/johnson-johnson-closes-landmark-intra-cellular-therapies-acquisition-to-solidify-neuroscience-leadership"
+  },
+  "DM": {
+    "successor": null,
+    "date": "2025-04-02",
+    "reason": "Desktop Metal acquired by Nano Dimension for cash at $5.295/share; delisted from NYSE",
+    "source": "https://investors.nano-di.com/press-releases/news-details/2025/Nano-Dimension-Completes-Acquisition-of-Desktop-Metal/default.aspx"
+  },
+  "CYBN": {
+    "successor": "HELP",
+    "date": "2026-01-05",
+    "reason": "Cybin rebranded Helus Pharma; US listing moved from NYSE American to Nasdaq",
+    "source": "https://www.businesswire.com/news/home/20251218891849/en/Cybin-to-Transfer-U.S.-Stock-Exchange-Listing-to-Nasdaq"
+  },
+  "MNMD": {
+    "successor": "DFTX",
+    "date": "2026-01-15",
+    "reason": "Mind Medicine rebranded Definium Therapeutics; Nasdaq listing unchanged",
+    "source": "https://markets.financialcontent.com/postgazette/article/bizwire-2024-4-1-mindmed-announces-voluntary-delisting-from-cboe-canada"
+  },
+  "CIVI": {
+    "successor": "SM",
+    "date": "2026-01-30",
+    "reason": "Civitas Resources merged into SM Energy; 1.45 SM shares per CIVI share",
+    "source": "https://www.sm-energy.com/investors/news-events/press-releases/detail/364/sm-energy-closes-merger-with-civitas-resources"
+  },
+  "TGTG": {
+    "successor": null,
+    "date": null,
+    "reason": "Never a valid US listing. Too Good To Go is private; the only TGTG is 11 88 0 Solutions AG on Xetra, which needs a .DE suffix in yfinance",
+    "source": null
+  }
+}

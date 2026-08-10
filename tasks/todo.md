@@ -1,52 +1,43 @@
 # TODO
 
-## On this (desktop) device - DONE
-- [x] Edit `.env.example`: added `FRED_API_KEY` (done by user).
-- [x] Untracked the private watchlist (`git rm --cached src/common/tickers.txt`), committed and
-      pushed as `6e325a2` on `feature/upgrade-stock-pipeline`. Databricks CLI OAuth profile set up.
+Session-to-session handoff snapshot. Resolved threads leave; survivors compress
+to state + next action + pointer. Full records: `tasks/completed/`.
 
-## Databricks CLI auth - OAuth, per device (no PAT)
-- [ ] Run on THIS machine and the laptop (opens a browser, writes ~/.databrickscfg):
-      `databricks auth login --host https://dbc-fc3cf8bd-4b59.cloud.databricks.com`
-- [ ] Profile is device-local (never in git). Both machines use the same tracked databricks.yml.
-- [ ] After login here, assistant runs `databricks bundle validate` to confirm sync.include + FRED var.
+## State as of 2026-08-09
 
-## On the laptop (next session) - full setup is in README "Quick Start"
-- [ ] Pull `develop`.
-- [ ] Install tools: `brew install uv databricks terraform openjdk@17`.
-- [ ] `uv sync` (builds .venv; installs pinned Python 3.12 itself - no system Python needed).
-- [ ] Recreate the private watchlist: `cp src/common/tickers.example.txt src/common/tickers.txt`
-      then adjust. It is gitignored, so it does NOT arrive via git - mirror changes manually.
-- [ ] `cp .env.example .env`, set `FRED_API_KEY` and `ALERT_EMAIL`.
-- [ ] `databricks auth login --host <workspace>` (OAuth, per device; databricks.yml arrives via git).
-- [ ] Run tests: `export JAVA_HOME=/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home`
-      then `uv run pytest tests/ -v` (without JAVA_HOME the Spark tests skip).
+Desktop is fully configured and verified. `develop` and `main` are aligned at
+`52489de`; CI green (test -> validate -> deploy). Job definition on Databricks
+came from CI on `main`. Record: `completed/plan-completed-2026-08-09.md`.
 
-## CI/CD model (GitHub Actions, .github/workflows/deploy.yml)
-- Branch model: work on `develop`, `main` is stable + the deploy trigger. One Databricks env.
-- Triggers: push/PR to `develop` or `main` runs test + validate; push to `main` ALSO deploys
-  (`databricks bundle deploy`, `default` target). Deploy updates the job def; the pipeline runs
-  on its daily cron (22:00 MON-FRI) or a manual `databricks bundle run`.
-- CI auth + config are GitHub REPO SECRETS (not vars, not env-secrets - jobs declare no environment):
-  `DATABRICKS_HOST`, `DATABRICKS_TOKEN` (PAT reused from dotenv), `FRED_API_KEY`, `ALERT_EMAIL`.
-  Added 2026-08-09. FRED key + email reach the deploy via `BUNDLE_VAR_*` from those secrets.
-- Local dev stays keyless (OAuth U2M). Only CI uses the token.
-- [x] `ALERT_EMAIL` added to dotenv + example (done by user).
+## Open
 
-## Watchlist in CI - via WATCHLIST secret
-- CI deploy materializes `src/common/tickers.txt` from the `WATCHLIST` repo secret (comma- or
-  newline-separated) before `databricks bundle deploy`. Keep the secret in sync with local.
-- If the secret is empty/unset, deploy falls back to `tickers.example.txt`.
-- [ ] Add the `WATCHLIST` repo secret in GitHub (else the deployed job uses the example list).
+1. **Laptop not yet set up.** Full steps are in README "Quick Start". Two
+   corrections that the older instructions got wrong:
+   - Do **not** `brew install terraform` - the CLI downloads its own.
+   - Recreate the private watchlist with
+     `uv run python scripts/watchlist.py seed` (reads `WATCHLIST` from the dotenv),
+     not by copying the example. The example is now a 10-ticker starter, not the
+     real list.
 
-## Verified end to end (2026-08-09)
-- [x] FRED key + alert email BUNDLE_VAR resolution confirmed via validate.
-- [x] Full pipeline green on main push: test (uv) -> validate -> deploy. "Deployment complete!"
-- [x] Note: deploy updates the job definition; the pipeline itself runs on its daily cron
-      (22:00 MON-FRI) or a manual `databricks bundle run stock_analytics_pipeline`.
+2. **Watchlist swept and corrected - 318 tickers, all resolving.** Eight dead
+   symbols removed and two successors added (`SM`, `XYZ`) on 2026-08-09; the
+   causes are recorded in `src/common/ticker_migrations.json`. Dotenv, the
+   `WATCHLIST` repo secret and `tickers.txt` all carry the same 318.
+   **Recurring:** run `uv run python scripts/watchlist.py check` after any
+   watchlist edit, and monthly when the 30-day cache expires. New dead symbols
+   print as `UNMAPPED` - research and add them to the migrations file.
 
-## Done this session
-- FRED key no longer hardcoded in `databricks.yml`. It flows from `.env` at deploy via the
-  `fred_api_key` bundle variable / `BUNDLE_VAR_fred_api_key`. Single source of truth is now `.env`.
-  Verified the old key never leaked: `databricks.yml` was never committed and the key string is
-  in zero commits across all branches. No rotation needed.
+3. **`feature/upgrade-stock-pipeline` still exists on origin** at `bd0694f`,
+   fully superseded by `develop`. **Decision needed:** delete it or keep it.
+   Not deleting a remote branch without a ruling.
+
+4. **`setup-uv` is pinned to exact `v9.0.0`**, so it will not pick up patch
+   releases. Bump manually, or switch to a floating `v9` tag once astral
+   publishes one.
+
+## Deferred, not blocking
+
+- `requests` is pinned at the base-image version (2.32.2) rather than the newest.
+  Raising it means proving it against the env-3 base first; see `plan.md` item 2.
+- The env-3 base ships pandas 1.5.3 and the job upgrades to 3.0.2 on every run.
+  That predates this session and is unchanged, but it is install time on each run.

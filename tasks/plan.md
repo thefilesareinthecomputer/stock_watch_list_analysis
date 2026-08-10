@@ -1,29 +1,47 @@
-# Plan / session log
+# Plan / dev docs
 
-## 2026-08-09 - repo tidy-up for cross-device sync + watchlist privatization
+Active plan and live gotchas only. Finished work lives in `tasks/completed/`.
 
-Branch: `feature/upgrade-stock-pipeline`. Done on the desktop; continue on the laptop.
+## Active
 
-### What changed this session
-- **Docs de-staled.** The watchlist source of truth moved from `.env` (`USER_STOCK_WATCH_LIST`)
-  to `src/common/tickers.txt` some time ago, but CLAUDE.md, README, `.env.example`, and agent
-  memory still claimed `.env`. Corrected CLAUDE.md and README. (`.env.example` still needs a
-  manual edit - see todo; it is behind the `.env*` permission guard.)
-- **Watchlist privatized.** This is a public repo. Split the list so logic stays public and the
-  real strategy list stays private:
-  - `src/common/tickers.example.txt` - new tracked public starter (frozen copy of the 324-ticker dev list).
-  - `src/common/tickers.txt` - now the private real list, added to `.gitignore` (line 26).
-  - `config.py::_load_tickers()` prefers `tickers.txt`, falls back to `tickers.example.txt`.
-  - `databricks.yml` gained `sync.include: [src/common/tickers.txt]` so the deploy still ships the
-    real list despite the gitignore.
-  - `databricks.yml` is now tracked (FRED key removed, no secrets left). Shared across devices so
-    both deploy to the same workspace. Note: it still contains a failure-notification email.
-- Verified: `config` imports and loads 324 tickers from the real file; both files exist.
+Nothing in flight. The pipeline is deployed, pinned and green end to end as of
+2026-08-09; record in `completed/plan-completed-2026-08-09.md`.
 
-### Known risk to verify
-- `sync.include` overriding `.gitignore` on Databricks Free Edition is assumed, not yet confirmed.
-  Check on the next `databricks bundle deploy` that the real list (not the example) reached the job.
+## Dev docs - live gotchas
 
-### Security note (not fixed)
-- `databricks.yml` line ~15 contains a live FRED API key in plaintext. The file is gitignored so
-  it is not public, but consider moving it to `.env`/CLI auth and rotating if it was ever committed.
+1. **Never raise numpy above 1.x in `databricks.yml`.** Serverless
+   `environment_version: "3"` ships `pyarrow==15.0.2`, which requires
+   `numpy>=1.16.6,<2`, and nothing in the dependency list upgrades pyarrow.
+   Arrow backs every Spark/pandas conversion, so a numpy 2.x pin breaks the job
+   at the next run, not at deploy. `bundle validate` cannot catch it.
+   - **If numpy must move:** pin pyarrow >=16 in the same change and prove the
+     pair resolves before shipping. Why and how it was caught:
+     `completed/plan-completed-2026-08-09.md`.
+
+2. **Job deps are pinned to versions the base image tolerates, not to
+   `uv.lock`.** `databricks.yml` and `pyproject.toml` are aligned by hand where
+   the base image constrains a package (numpy, requests). Changing one without
+   the other reintroduces the local/production split.
+
+3. **`WATCHLIST` in the dotenv shadows `tickers.txt` locally.**
+   `config._load_tickers()` reads the env var first, and `load_dotenv()` finds
+   the dotenv even when the variable is unset in the parent shell. Local runs
+   therefore never exercise the file path. To test the fallback, run from a
+   directory with no dotenv above it.
+
+4. **`tickers.txt` matters only for deploy.** It is gitignored, force-synced by
+   `databricks.yml` (`sync.include`), and confirmed present in the deployed
+   workspace bundle. A manual deploy ships whatever the file holds - run
+   `uv run python scripts/watchlist.py seed` first. CI materializes it from the
+   `WATCHLIST` repo secret instead.
+
+5. **Databricks Free Edition constraints** that break the build are enumerated in
+   CLAUDE.md ("Free Edition gotchas"). Still current; not duplicated here.
+
+## Settled
+
+- **Bundles need no local terraform.** The CLI downloads its own (TF 1.5.5 +
+  provider 1.124.0); `DATABRICKS_TF_*` are air-gapped-only. Record in
+  `completed/plan-completed-2026-08-09.md`.
+- **`astral-sh/setup-uv` publishes floating major tags only through `v7`.** v8
+  and v9 must be referenced by exact tag. Same record.

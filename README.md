@@ -544,8 +544,8 @@ WHERE as_of_date = (SELECT MAX(as_of_date) FROM gold.signal_alerts);
 
 - [uv](https://docs.astral.sh/uv/) - Python and dependency manager (`brew install uv`).
   It installs the pinned Python (3.12, from `.python-version`) itself; no system Python needed.
-- Databricks CLI (`brew install databricks`)
-- Terraform (`brew install terraform`) - only for a manual `bundle deploy`
+- Databricks CLI (`brew install databricks`). Bundles run on Terraform, but the CLI
+  downloads its own - no local terraform install is needed.
 - JDK 17 for the local Spark tests (`brew install openjdk@17`). Without it those tests skip.
 - FRED API key ([free](https://fred.stlouisfed.org/docs/api/api_key.html))
 
@@ -558,9 +558,14 @@ git clone <repo-url> && cd stock_watch_list_analysis
 cp .env.example .env
 # Edit .env: set FRED_API_KEY and ALERT_EMAIL
 
-# Private watchlist (gitignored - does NOT sync via git; recreate on each device):
-cp src/common/tickers.example.txt src/common/tickers.txt
-# Edit src/common/tickers.txt: your watchlist, one ticker per line
+# Private watchlist (gitignored - does NOT sync via git; recreate on each device).
+# Set WATCHLIST in .env (comma- or newline-separated), then materialize the file
+# that a manual deploy ships:
+uv run python scripts/watchlist.py seed
+# Then confirm every symbol still resolves on yfinance (cached; --full to recheck):
+uv run python scripts/watchlist.py check
+# Without WATCHLIST set, the pipeline falls back to the 10-ticker starter list
+# in src/common/tickers.example.txt.
 
 # Databricks auth - OAuth, nothing stored in the repo (per device):
 databricks auth login --host https://dbc-fc3cf8bd-4b59.cloud.databricks.com
@@ -585,7 +590,6 @@ Manual deploy (optional, from a machine with the OAuth profile):
 ```bash
 set -a; source .env; set +a
 BUNDLE_VAR_fred_api_key="$FRED_API_KEY" BUNDLE_VAR_alert_email="$ALERT_EMAIL" \
-DATABRICKS_TF_EXEC_PATH=$(which terraform) \
 databricks bundle deploy
 databricks bundle run stock_analytics_pipeline
 ```
