@@ -4,10 +4,22 @@ Active plan and live gotchas only. Finished work lives in `tasks/completed/`.
 
 ## Active
 
-Nothing in flight. The pipeline is deployed, pinned and green end to end as of
-2026-08-09; record in `completed/plan-completed-2026-08-09.md`.
+**Recommendation engine rebuild** - spec at `tasks/SPEC-RECOMMENDATION-ENGINE.md`,
+architecture at `SPEC.md`. P0 shipped 2026-08-10 (inverted score fixed, immutable
+recommendation snapshot, freshness gate).
+- **Next:** P1 - local DuckDB warehouse owning the scored path (prices, splits)
+  with raw close plus adjustment factors. Databricks keeps running untouched;
+  no cutover.
+- **Open before P4:** rank value/quality within sector, or accept the sector
+  tilt deliberately.
 
 ## Dev docs - live gotchas
+
+0. **`PERCENT_RANK` assigns 0.0 to the FIRST row in the ordering.** So
+   `ORDER BY x DESC` gives the largest `x` the *lowest* percentile. All four
+   score components shipped inverted on this, and every test passed. Component
+   directions now live once in `src/scoring/components.py`; never add one
+   without a direction test and a null fixture.
 
 1. **Never raise numpy above 1.x in `databricks.yml`.** Serverless
    `environment_version: "3"` ships `pyarrow==15.0.2`, which requires

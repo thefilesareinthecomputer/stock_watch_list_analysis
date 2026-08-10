@@ -102,13 +102,22 @@ trustworthy.
 
 Ordered by dependency. Each phase gates the next.
 
-### P0 - Stop the bleeding
+### P0 - Stop the bleeding — **DONE** 2026-08-10
 Fix the inverted score; make recommendations immutable.
-- Correct all four `PERCENT_RANK` directions; add a direction test per component.
-- `gold.recommendations`: append-only, one row per symbol per run, with every
-  component, the price used, and `methodology_version`. Never rewritten.
-- Freshness gate: fail the run when any active symbol's max date is behind the
-  last NYSE session.
+- [x] All four `PERCENT_RANK` directions corrected, defined once in
+  `src/scoring/components.py`, with a direction test and a null fixture each.
+  Verified the old expressions fail every one of those tests.
+- [x] `gold.recommendations` — append-only, first-write-wins per
+  (`as_of_date`, `methodology_version`). `src/scoring/snapshot.py`.
+- [x] Tiered freshness gate, running **before** the snapshot so a stale day is
+  never recorded immutably. `common.quality.check_freshness`.
+
+Delivered as `045296b`, `5698601`, `a8ef0f3`. 212 tests pass.
+
+**Consequences to watch.** A partially-recorded day stays partial by design -
+topping it up would attach one run's evidence to another's - which is why the
+gate runs first. And the gate can now fail the nightly job on a bad yfinance
+night; that is the intent, but it is a live behaviour change.
 
 ### P1 - Local warehouse
 - DuckDB warehouse; bronze stores **raw close plus adjustment factors**.
