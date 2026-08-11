@@ -46,6 +46,14 @@ and the current ranking has never been shown to predict anything.
    run from one command and produce different, reproducible results.
 9. Results recorded with the methodology that produced them -> verify: re-running
    a recorded variant reproduces its output exactly.
+9b. **Log the trial count prospectively** - every variant evaluated, including
+   abandoned ones, recorded before its result is seen -> verify: the count is
+   queryable and monotonic. Without it a Sharpe cannot be deflated and the best
+   of N variants cannot be distinguished from the luckiest of N
+   (Bailey & Lopez de Prado 2014). Retrofitting is impossible by construction:
+   trials you did not record are trials you cannot count. Accept a factor at
+   t > 3.0, not 2.0 (Harvey, Liu & Zhu 2016). See
+   `knowledge/research/2026-08-10-failure-modes.md`.
 
 **L5 - promote**
 
@@ -109,6 +117,15 @@ specced - see the note in `tasks/SPEC-RECOMMENDATION-ENGINE.md` open questions)
    without a direction test and a null fixture. Two advisors reasoned backwards
    about this in opposite directions - settle ranking direction by executing
    the SQL, never by argument.
+
+0a. **DuckDB `ASOF JOIN` silently drops unmatched left rows.** Use
+   `ASOF LEFT JOIN`. Point-in-time fundamentals joins are exactly where this
+   bites: a symbol with no filing before the as-of date vanishes from the
+   result instead of appearing with nulls, so the universe silently shrinks and
+   nothing fails. Same failure shape as a dead ticker contributing no rows.
+   Also: Databricks time-series feature tables permit exactly one timestamp
+   key, so any bitemporal collapse has to happen in silver.
+   Source: `knowledge/research/2026-08-10-oss-quant-stacks.md`.
 
 0b. **Dialect differences are found by running, not reading.** `CURRENT_TIMESTAMP()`
    is a function in Spark and a bare keyword in DuckDB. Any SQL that must run in
