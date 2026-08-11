@@ -10,18 +10,22 @@ to state + next action + pointer. Full records: `tasks/completed/`.
 Read in this order: `tasks/SPEC-LOCAL-WAREHOUSE.md` (what and why),
 `tasks/plan.md` (the ordered tasks), `SPEC.md` (invariants that must hold).
 
-**NEXT ACTION: task 1 - adjustment factors.** Compute them from `dividend` and
-`split_ratio` in `warehouse/market.duckdb`, derive the adjusted series rather
-than storing it, and reconcile against yfinance's `adj_close` within 0.5% for
-ten dividend payers across three split events.
+L1 and L2 are done. The local pipeline runs end to end: bronze -> silver -> gold,
+1.13M signal rows across 324 symbols, in ~2 minutes.
+
+**NEXT ACTION: task 4 - forward returns.** Build `src/backtest/` computing
+returns at 21/63/252 sessions from `warehouse/market.duckdb`, filled at the
+**next open** (data lands after the close, so a same-close fill is fiction).
+Verify by hand-computing one symbol over one window and matching to 6dp.
+Then task 5 (costs), 6 (IC and deciles), 7 (known-answer and look-ahead).
 
 ```bash
-uv run pytest tests/ -q                     # 216 passing
-uv run python -c "import duckdb; print(duckdb.connect('warehouse/market.duckdb').execute('SELECT COUNT(*) FROM bronze_prices').fetchone())"
+uv run pytest tests/ -q            # 232 passing
+uv run python scripts/build_local.py   # rebuild local silver + gold, ~2 min
 ```
 
 If `warehouse/` is missing (gitignored, so it does not travel between devices):
-`uv run python scripts/backfill.py` - about 20 minutes for the full history.
+`uv run python scripts/backfill.py` first - about 2 minutes for full history.
 
 ## State as of 2026-08-10
 

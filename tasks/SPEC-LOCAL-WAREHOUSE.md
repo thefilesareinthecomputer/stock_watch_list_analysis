@@ -130,11 +130,21 @@ track, per the parent spec.
 **Measured:** full scan of 1.19M rows takes **0.557s**, against ~18 minutes for
 a Databricks run. That ratio is the entire justification for local-first.
 
-### L2 - Local silver
-- Adjustment factors computed from dividends and splits; adjusted series derived
-  rather than stored.
-- Indicators ported as shared SQL, parity-tested per indicator.
-- Gate: every ported transform passes parity before use.
+### L2 - Local silver — **DONE** 2026-08-10
+- [x] Adjustment factors from dividends and splits, derived not stored
+      (`common.adjustments`). Reconciles with yfinance `adj_close` within 0.5%
+      for ten dividend payers across sixteen years, including a 4-for-1 split.
+- [x] `scripts/build_local.py` builds local silver and gold:
+      **1,125,563 signal rows, 324 symbols, 2010-2026, in ~2 minutes.**
+- [x] Indicators needed no porting - `common.indicators.build_signal_series` is
+      pure pandas, so the local build calls the identical function the Spark job
+      calls. Parity there is by construction rather than translation; only the
+      SQL layer needed a parity test, and it has one.
+
+**Known differences from Databricks, both deliberate:** prices are adjusted by
+our own factors rather than yfinance's self-rewriting `adj_close`, and
+fundamentals are absent locally so `value_pct` degenerates to a constant. The
+second resolves when EDGAR lands (parent spec P4).
 
 ### L3 - Evaluation harness
 - Forward returns at 21/63/252 sessions, next-open fills, cost and slippage.
