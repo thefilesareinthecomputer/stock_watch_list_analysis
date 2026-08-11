@@ -185,7 +185,38 @@ assigns 0.0 to the largest `x`, so the best 30-day performer received the lowest
 momentum contribution while a higher composite ranked better. Every test passed
 throughout. Untested direction is not a detail; it silently inverts the product.
 
-### 6.2 Component design
+### 6.2 Signals are tiered, and evidence decides the tier
+
+Every signal is `scored` (in the composite), `candidate` (computed and evaluated
+every run, weight zero) or `monitored` (stored only). Tier is **data, not code**,
+so promotion and demotion are recorded, dated and reversible.
+
+A signal removed from the code stops accumulating evidence, so the decision to
+drop it can never be revisited on data. A `candidate` costs one column and buys
+that option back.
+
+Promotion requires walk-forward evidence at `t > 3.0` - the higher bar being the
+multiple-testing correction - plus a prospectively logged trial count, plus
+correlation with existing scored signals below a stated threshold. A signal that
+duplicates one already in the composite adds false confidence, not information.
+
+### 6.3 Validation holds out time, never symbols
+
+Stocks co-move, so a held-out *set of symbols* largely measures the market. The
+information is in held-out *periods*: score as of a past date using only what was
+knowable then, measure realized excess return, roll forward, report per fold.
+
+Full-sample cross-sectional IC - what the common tooling reports - is **not**
+validation. Using the whole history to evaluate every date is the same error
+class as a look-ahead backtest.
+
+Trial counts are recorded before results are seen. Trials not recorded are trials
+that cannot be counted, and without the count the best of N variants cannot be
+distinguished from the luckiest of N. This is unretrofittable by construction.
+
+Full treatment: `tasks/SPEC-SIGNAL-TIERS.md`.
+
+### 6.4 Component design
 
 A composite of near-duplicate inputs is one input with false confidence.
 Components must be conceptually distinct and checked for correlation.

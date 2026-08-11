@@ -30,6 +30,36 @@ Bundles run on Terraform under the hood, but the CLI downloads its own (`databri
 terraform` reports which). No local terraform install is needed; `DATABRICKS_TF_EXEC_PATH` and
 `DATABRICKS_TF_VERSION` are for air-gapped use only.
 
+## Local-first development (DuckDB)
+
+Databricks is the production target; iteration happens locally because a run
+there costs ~18 minutes and quota, against ~2 minutes locally.
+
+```bash
+uv run python scripts/backfill.py        # yfinance -> warehouse/market.duckdb (~2 min)
+uv run python scripts/build_local.py     # local silver + gold (~2 min)
+uv run pytest tests/test_engine_parity.py -q   # same SQL, both engines
+```
+
+Indicators are shared code, not a port: `common.indicators.build_signal_series`
+is pure pandas and runs in both places, so parity there is by construction. Only
+SQL needs the parity test - and any SQL that must run in both goes through it
+before use, with differences resolved to the common subset rather than branched.
+
+## Private, gitignored, does not travel between devices
+
+| Path | What | Regenerable? |
+|---|---|---|
+| `.env` | Secrets, `WATCHLIST` | No |
+| `src/common/tickers.txt` | The real watchlist | Yes - `watchlist.py seed` |
+| `warehouse/` | Local DuckDB | Yes - `backfill.py`, ~2 min |
+| `knowledge/` | Research and KB | **No** |
+| `POSITIONS.md` | Held positions and priority | No |
+| `_relay.md` | Handoff scratch file, bidirectional | No |
+
+Never echo the contents of these into commit messages, tracked files, or
+anything reaching the public repo.
+
 ## Branch & deploy workflow
 Solo, one Databricks environment. Work on `develop`; `main` is stable and the deploy trigger.
 - Push/PR to `develop` or `main` runs CI (`.github/workflows/deploy.yml`): `test` then `bundle validate`.
