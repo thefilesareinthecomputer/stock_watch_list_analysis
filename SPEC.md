@@ -36,11 +36,14 @@ Bronze records what a source said and when it said it, append-only, never
 overwritten. Every conclusion drawn from it - score, rank, signal, alert -
 must be **snapshotted at the time it was drawn** and never rewritten.
 
-A conclusion that can silently change is not evidence of anything. This is the
-principle the current implementation most violates: gold is rebuilt with
-`CREATE OR REPLACE` on every run, so yesterday's ranking is gone, and
-`auto_adjust=True` means a single dividend rescales the whole close history
-underneath it.
+A conclusion that can silently change is not evidence of anything.
+
+As of 2026-08-10 this holds partially. `gold.recommendations` is append-only and
+first-write-wins, so recommendations are now evidence. Every *other* gold table
+is still rebuilt with `CREATE OR REPLACE` on each run, and on Databricks
+`auto_adjust=True` still rescales the close history on every dividend. Locally
+that second problem is solved: bronze stores raw prices and the adjustment is
+derived on demand.
 
 ### P2. Point-in-time or not at all
 
@@ -151,7 +154,8 @@ no claim about the market. Any presentation implying otherwise is wrong.
 
 ### 5.4 Required additions
 
-Not yet built. Listed here because their absence blocks the stated goal.
+Status as of 2026-08-10. Listed here because their absence blocks the stated
+goal; build status is tracked in the phase specs, not asserted here long-term.
 
 - **`gold.recommendations`** - append-only, one row per symbol per run:
   score, rank, every component, the price used, and a `methodology_version`.
@@ -175,11 +179,11 @@ Not yet built. Listed here because their absence blocks the stated goal.
 - The composite carries a `methodology_version`; changing weights or inputs
   increments it and never restates prior snapshots.
 
-The direction invariant exists because the current implementation inverts all
-four components: `PERCENT_RANK() OVER (ORDER BY x DESC)` assigns 0.0 to the
-largest `x`, so the best 30-day performer receives the lowest momentum
-contribution while a higher composite ranks better. Untested direction is not a
-detail; it silently inverts the product.
+The direction invariant exists because the implementation shipped with all four
+components inverted, fixed 2026-08-10. `PERCENT_RANK() OVER (ORDER BY x DESC)`
+assigns 0.0 to the largest `x`, so the best 30-day performer received the lowest
+momentum contribution while a higher composite ranked better. Every test passed
+throughout. Untested direction is not a detail; it silently inverts the product.
 
 ### 6.2 Component design
 

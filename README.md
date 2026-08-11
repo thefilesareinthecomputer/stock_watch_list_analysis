@@ -86,10 +86,16 @@ ORDER BY composite_score DESC;
 
 | Dimension | Ranks by | High score means |
 |-----------|----------|-----------------|
-| `momentum_pct` | 30-day return (DESC) | Strong recent price momentum |
-| `value_pct` | P/E ratio (ASC) | Low P/E = cheaper = better value |
-| `risk_pct` | RSI (ASC) | Low RSI = oversold = less near-term risk |
-| `quality_pct` | MFI (DESC) | High MFI = accumulation pressure = quality |
+| `momentum_pct` | 30-day return (ASC) | Strong recent price momentum |
+| `value_pct` | P/E ratio (DESC), non-positive excluded | Low P/E = cheaper = better value |
+| `risk_pct` | RSI (DESC) | Low RSI = oversold = less near-term risk |
+| `quality_pct` | MFI (ASC) | High MFI = accumulation pressure = quality |
+
+The sort directions read backwards on purpose. `PERCENT_RANK` assigns 0.0 to the
+**first** row in the ordering, so `ASC` is what gives the largest value the
+highest percentile. Until 2026-08-10 all four were the other way round and the
+ranking was inverted - see `src/scoring/components.py`, whose directions are
+pinned by tests.
 
 **How to use it:**
 - `composite_score > 0.75` — strong candidate, multiple dimensions aligned

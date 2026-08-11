@@ -119,7 +119,11 @@ topping it up would attach one run's evidence to another's - which is why the
 gate runs first. And the gate can now fail the nightly job on a bad yfinance
 night; that is the intent, but it is a live behaviour change.
 
-### P1 - Local warehouse
+### P1 - Local warehouse — **DONE** 2026-08-10
+Delivered as L1 and L2 of `tasks/SPEC-LOCAL-WAREHOUSE.md`: raw-price backfill
+(1.19M rows, 324 symbols, 2010-2026) and a local silver/gold build running the
+same indicator function and the same ranking SQL, in ~2 minutes.
+
 - DuckDB warehouse; bronze stores **raw close plus adjustment factors**.
 - Backfill prices 2010+ for the index universe.
 - **Port only the scored path: prices and splits.** They keep their bronze

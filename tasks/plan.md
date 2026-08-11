@@ -8,25 +8,16 @@ Active plan and live gotchas only. Finished work lives in `tasks/completed/`.
 `tasks/SPEC-RECOMMENDATION-ENGINE.md`; current phase
 `tasks/SPEC-LOCAL-WAREHOUSE.md`.
 
-Shipped: P0 (inverted score fixed, immutable snapshot, freshness gate) and
-L1 (local backfill - 1.19M rows, 324 symbols, 2010-2026, 0.557s full scan).
+Shipped 2026-08-10 - full record in `completed/plan-completed-2026-08-10.md`:
+P0 (score inversion, immutable snapshot, freshness gate), watchlist merged to
+324, engine parity harness, and L1+L2 of the local warehouse (1.19M raw price
+rows and 1.13M signal rows, built locally in ~2 min against ~18 on Databricks).
 
 ### Ordered tasks
 
-Dependencies: L2 -> L3 -> L4 -> L5. Within L2, tasks 1 and 2 are independent and
-can run in parallel. Within L3, 6 and 7 are independent once 5 lands.
+Dependencies: L3 -> L4 -> L5. Within L3, 6 and 7 are independent once 5 lands.
 
-**L2 - local silver** (gates everything after it)
-
-1. Adjustment factors from dividends and splits; adjusted series derived, never
-   stored -> verify: derived series reconciles with yfinance `adj_close` within
-   0.5% for 10 dividend payers across 3 split events.
-2. Port indicator SQL to shared definitions in `src/scoring/` -> verify: a parity
-   test per indicator, Spark output == DuckDB output on the standard fixture.
-3. Local `silver_signals` built from the shared SQL -> verify: row count per
-   symbol equals its trading-day count in bronze; no null `as_of_date`.
-
-**L3 - evaluation harness**
+**L3 - evaluation harness** (next)
 
 4. Forward returns at 21/63/252 sessions, filled at next open -> verify: a
    hand-computed return for one symbol over one window matches to 6dp.
@@ -65,7 +56,14 @@ can run in parallel. Within L3, 6 and 7 are independent once 5 lands.
    `ORDER BY x DESC` gives the largest `x` the *lowest* percentile. All four
    score components shipped inverted on this, and every test passed. Component
    directions now live once in `src/scoring/components.py`; never add one
-   without a direction test and a null fixture.
+   without a direction test and a null fixture. Two advisors reasoned backwards
+   about this in opposite directions - settle ranking direction by executing
+   the SQL, never by argument.
+
+0b. **Dialect differences are found by running, not reading.** `CURRENT_TIMESTAMP()`
+   is a function in Spark and a bare keyword in DuckDB. Any SQL that must run in
+   both goes through `tests/test_engine_parity.py` first, and differences are
+   resolved to the common subset - an engine branch is two implementations again.
 
 1. **Never raise numpy above 1.x in `databricks.yml`.** Serverless
    `environment_version: "3"` ships `pyarrow==15.0.2`, which requires

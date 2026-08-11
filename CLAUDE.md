@@ -71,6 +71,6 @@ to materialize `tickers.txt` for a manual deploy. Mirror the change to the `WATC
 
 ## Code size — track after major changes to prevent bloat
 ```bash
-find src   -name "*.py" -exec wc -l {} +   # ~3966 across 29 files
-find tests -name "*.py" -exec wc -l {} +   # ~861 across 6 files
+find src   -name "*.py" -exec wc -l {} +   # ~4396 across 31 files
+find tests -name "*.py" -exec wc -l {} +   # ~2842 across 12 files
 ```
