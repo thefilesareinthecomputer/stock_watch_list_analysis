@@ -30,15 +30,21 @@ three correlated oscillators plus a broken value metric (parent spec P4).
 L1 and L2 are done - the local pipeline runs bronze -> silver -> gold, 1.13M
 signal rows, ~2 minutes.
 
-**START WITH task 4 - forward returns.** Nothing can be called reliable until
-there is a way to measure whether past calls were right. Build `src/backtest/`
-computing returns at 21/63/252 sessions from `warehouse/market.duckdb`, filled
-at the **next open** (data lands after the close, so a same-close fill is
-fiction). Verify by hand-computing one symbol over one window to 6dp. Then 5
-(costs), 6 (IC and deciles), 7 (known-answer and look-ahead).
+**Tasks 4-7 are DONE (2026-08-11): the evaluation harness exists.**
+`src/backtest/` + `scripts/evaluate.py`; known-answer and look-ahead checks
+pass against 16 years of history. See plan.md L3 for the first read on the
+candidates (earnings yield promising, GP/A mixed, ROE weak, 30d momentum
+worthless at its own horizon).
 
-Only once 4-7 exist is there any basis for calling a signal reliable. Emitting
-buy/sell labels before that is just renaming the current ranking.
+**Task 9b is DONE (2026-08-11): the trial log exists** (`backtest.trials`,
+tracked `trial_log.jsonl`, wired into `evaluate.py`), and an end-to-end chain
+test (`tests/test_e2e_local.py`) walks bronze -> signals -> gold composite ->
+fundamentals -> candidates -> forward returns -> verdict -> trial log on
+synthetic data. 287 tests.
+
+**START WITH task 8 - variants as data** (decide config entry vs SQL fragment
+first), then the L6 tier registry (10b), which promotion decisions read from.
+Every variant sweep now gets counted automatically.
 
 ```bash
 uv run pytest tests/ -q                # 232 passing
@@ -61,16 +67,25 @@ If `warehouse/` is missing (gitignored, so it does not travel between devices):
   tier on evidence. 12-1 momentum, gross profitability and realized volatility
   enter as candidates with better priors.
 - **Trial counts are logged before results are seen.** Cannot be retrofitted.
-- `POSITIONS.md` is gitignored - held positions and priority live there.
+- Held positions live in `knowledge/positions.md` (gitignored via
+  `knowledge/`), sectioned by account - delivered 2026-08-10, keep the format.
+
+### Resolved 2026-08-11
+
+- **Forecast window: 126 sessions (~6 months), provisional.** Final choice
+  comes from task 6's IC-by-horizon decay report. 126 added to the task 4
+  horizons so the window is a measured one.
+- **EDGAR CompanyFacts ingested end to end** - see plan.md shipped record and
+  gotcha 0c (CIK fallback, XOM holdco gap, stale-shares guard).
 
 ### Needed from the user next session
 
-- **The held-position subset.** A list of tickers currently held, to be tracked
-  more closely than the rest. Put it in `_relay.md`.
-- **A ruling on the forecast window** - 6 months, or something else.
 - **Which broad universe(s) to keep in view** - one large-cap tier, or several.
   Line of sight (task 13) and promotion into tracking (task 14) are both wanted
   and are separate mechanisms.
+- **A ruling on XOM's predecessor CIK** - merge the old operating company's
+  filing history under the new holdco ticker, or accept neutral fundamentals
+  until the holdco's first 10-K.
 
 ## State as of 2026-08-10
 
@@ -82,17 +97,18 @@ engine-parity harness, and the local backfill.
 
 ## Open
 
-1. **Nothing runs locally yet beyond the backfill.** DuckDB holds bronze prices
-   and executes fixtures in tests. There is no local silver, no indicators, no
-   evaluation. That is L2 and L3.
+1. **No evaluation yet.** The local warehouse builds bronze through gold,
+   including the EDGAR candidate tier, but nothing measures whether any
+   ranking predicts returns. That is L3, and it gates everything downstream.
 
 2. **Three decisions the work will reach.** Cost model (flat bps vs
    spread-aware) before task 6; how a variant is expressed (config vs SQL
    fragment) before task 8; sector-neutral ranking before the parent spec's P4.
 
 3. **Backtest results cannot set a go-live threshold.** Survivorship (the
-   universe is today's survivors) and absent fundamentals history make the
-   levels biased. The harness is a mechanics check and variant comparator; real
+   universe is today's survivors) biases the levels; fundamentals history now
+   reaches back to 2009 via EDGAR, which narrows but does not remove the
+   caveat. The harness is a mechanics check and variant comparator; real
    evidence comes from the forward paper track.
 
 4. **`feature/upgrade-stock-pipeline` still on origin** at `bd0694f`, fully
@@ -106,4 +122,5 @@ engine-parity harness, and the local backfill.
   until backtest levels matter, which per item 3 is not yet.
 - Congressional trades stay display-only. Lowest-trust source.
 - FRED, Fama-French, congressional and yfinance fundamentals stay on Databricks
-  and are deliberately not ported - they never touch a rank.
+  and are deliberately not ported - they never touch a rank. EDGAR fundamentals
+  are the local, PIT-clean replacement path (candidate tier today).

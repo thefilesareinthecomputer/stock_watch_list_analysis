@@ -86,7 +86,7 @@ mean it may inform a human but never moves a rank.
 | FRED macro | Ingested, unused in scoring | **Context** | Regime/timing is out of scope, so it informs rather than ranks |
 | Fama-French | Ingested, unused in scoring | **Attribution** | Explains realized returns; not a predictor |
 | Congressional trades | Ingested, unused in scoring | **Display only** - see open question 6 | 45-day statutory lag, dollar ranges not amounts, Senate only |
-| SEC EDGAR CompanyFacts | Not ingested | **New - primary fundamentals** | Free, as-filed, includes delisted filers |
+| SEC EDGAR CompanyFacts | **Ingested 2026-08-11** (annual facts, candidate tier) | **Primary fundamentals** | Free, as-filed, includes delisted filers |
 | Sharadar SF1 | Not ingested | **Optional upgrade** | Closes the delisted-price gap |
 
 **Known gap:** delisted price history. yfinance does not serve dead tickers, so
@@ -164,8 +164,14 @@ after it improves a system that is already accumulating evidence.
 
 ### P4 - Fundamentals from EDGAR (methodology v3)
 Behind the same interface, while the paper clock already runs.
-- Ingest `companyfacts.zip`; normalize XBRL tags to a concept model.
-- SCD2 keyed on filing date - PIT by construction.
+
+Ingest delivered 2026-08-11, ahead of P2/P3: per-CIK CompanyFacts API rather
+than the bulk zip (268K annual facts, 263 symbols, watchlist-scale), tag
+priorities as the concept model, `filed`-keyed knowledge series in silver,
+and E/P / gross profitability / ROE as weight-zero candidates
+(SPEC-SIGNAL-TIERS). The scoring items below remain open.
+- [x] Ingest CompanyFacts; normalize XBRL tags to a concept model.
+- [x] SCD2 keyed on filing date - PIT by construction.
 - Adds value (earnings yield, handles negative earnings) and quality
   (ROE, margins, debt/equity). Missing fundamentals score **neutral, not worst**.
 - Components checked for pairwise correlation before weighting.

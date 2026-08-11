@@ -99,16 +99,19 @@ a decision, only an alert, or only a display.
 |---|---|---|---|---|
 | yfinance prices | OHLCV daily, 2010+ | ~EOD | Medium - unofficial, shape changes between releases | Decisions |
 | yfinance fundamentals | PE, EPS, margins, ROE, debt | Irregular, revised | Low-medium - revised without notice; history only from first ingest | Decisions, with PIT discipline |
+| SEC EDGAR CompanyFacts | As-filed annual fundamentals, 2009+, keyed by `filed` date | Filing-driven | High - official, PIT by construction | Candidate signals (E/P, GP/A, ROE), zero weight until promoted |
 | FRED | Macro series | Daily/monthly | High - official | Context, regime |
 | Fama-French | Factor returns | Monthly, lagged | High - academic | Attribution only |
 | Congressional trades | Disclosed transactions | **45-day statutory lag**, dollar ranges not amounts, Senate only | Low | Display only - never decisions |
 | Splits | Corporate actions | EOD | Medium | Corrections |
 | `ticker_migrations.json` | Retirements and successors | Manual | High - human verified | Universe membership |
 
-**Single-source risk.** Prices and fundamentals both come from yfinance, an
-unofficial API that breaks regularly. There is no cross-check. A silent partial
-ingest is therefore the most likely path to a bad decision, which is what P4
-exists to catch.
+**Single-source risk.** Prices still come only from yfinance, an unofficial
+API that breaks regularly, with no cross-check. Fundamentals now have an
+official source: EDGAR CompanyFacts feeds the candidate tier locally, while
+the scored composite's P/E remains yfinance until a candidate earns
+promotion. A silent partial ingest remains the most likely path to a bad
+decision, which is what P4 exists to catch.
 
 **The adjusted-close problem.** `auto_adjust=True` means `close` is
 dividend-and-split adjusted, so the entire history rescales whenever a dividend

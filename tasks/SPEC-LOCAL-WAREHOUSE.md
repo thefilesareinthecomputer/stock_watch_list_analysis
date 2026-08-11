@@ -102,9 +102,11 @@ engineering removes them. Every result the loop prints must carry them.
 1. **Survivorship.** The universe is today's 324 symbols. Names that died are
    absent, so historical returns are overstated. `ticker_migrations.json` records
    nine retirements but yfinance will not serve delisted price history at all.
-2. **Fundamentals have no history.** The SCD2 starts at first pipeline run, so
-   `value_pct` is a constant for essentially all historical dates. Only the
-   price-derived components are honestly testable.
+2. **The scored value metric has no history.** `value_pct` still rides
+   yfinance's current-snapshot P/E, a constant for essentially all historical
+   dates. EDGAR CompanyFacts (ingested 2026-08-11) removes this limit for the
+   candidate tier: E/P, gross profitability and ROE carry `filed`-dated
+   history to 2009 and are honestly testable point-in-time.
 3. **One source.** yfinance is unofficial and changes shape without notice.
    There is no cross-check.
 4. **The universe is self-selected.** A rank means "best of what was already
@@ -142,16 +144,27 @@ a Databricks run. That ratio is the entire justification for local-first.
       SQL layer needed a parity test, and it has one.
 
 **Known differences from Databricks, both deliberate:** prices are adjusted by
-our own factors rather than yfinance's self-rewriting `adj_close`, and
-fundamentals are absent locally so `value_pct` degenerates to a constant. The
-second resolves when EDGAR lands (parent spec P4).
+our own factors rather than yfinance's self-rewriting `adj_close`, and the
+scored `value_pct` still degenerates to a constant locally (yfinance P/E).
+EDGAR landed 2026-08-11 for the candidate tier
+(`bronze_fundamentals` -> `silver_fundamental_metrics` ->
+`gold_candidate_signals`); the scored composite is unchanged until a
+candidate earns promotion.
 
-### L3 - Evaluation harness
-- Forward returns at 21/63/252 sessions, next-open fills, cost and slippage.
-- IC, decile monotonicity, hit rate, turnover, excess vs equal-weight.
-- **Known-answer test:** the harness run on the benchmark must return ~zero
-  excess. A harness that finds edge in SPY is broken.
-- **Look-ahead test:** shifting features forward one day must degrade results.
+### L3 - Evaluation harness — **DONE** 2026-08-11
+- [x] Forward returns at 21/63/126/252 sessions, next-open fills
+      (`backtest.returns`; hand-checked to 6dp on real data).
+- [x] Flat 10 bps/side cost model (`backtest.costs`).
+- [x] IC, decile monotonicity, hit rate, turnover, excess vs equal-weight
+      (`backtest.metrics`; synthetic perfect predictor scores IC 1.0).
+- [x] **Known-answer:** benchmark excess exactly zero; a seeded random signal
+      scores |IC| < 0.02 over 190 monthly dates.
+- [x] **Look-ahead:** a constructed leak scores IC 1.0 and collapses when
+      shifted one evaluation period (at horizon 21, where windows are
+      disjoint; at 126 consecutive windows share ~85% of sessions, so a
+      shift only dents the IC - overlap, not leakage).
+- Runner: `scripts/evaluate.py`, one-screen verdict with per-year IC folds
+  and the standing caveats.
 
 ### L4 - Variant comparison
 - Candidate scoring definitions as data, not code edits, so variants are
@@ -200,10 +213,9 @@ let a local result reach production without passing parity.
 
 ## Open questions
 
-1. **Universe for evaluation** - the 324 watchlist now, or wait for the
-   rule-based top-N? Watchlist is available today and biased; the rule-based
-   universe is the parent spec's P2.
-2. **Cost model** - flat basis points, or spread-aware? Flat is defensible at a
-   3-12 month horizon and much simpler.
-3. **How variants are expressed** - config entries, or small SQL fragments?
+1. **How variants are expressed** - config entries, or small SQL fragments?
    Affects how L4 stores and compares them.
+
+Resolved 2026-08-11: evaluation universe is the watchlist now (biased,
+caveated on every result) until the parent spec's P2 rule-based universe;
+cost model is flat 10 bps/side, spread-aware rejected at this horizon.

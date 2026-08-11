@@ -37,9 +37,13 @@ there costs ~18 minutes and quota, against ~2 minutes locally.
 
 ```bash
 uv run python scripts/backfill.py        # yfinance -> warehouse/market.duckdb (~2 min)
-uv run python scripts/build_local.py     # local silver + gold (~2 min)
+uv run python scripts/backfill_fundamentals.py  # SEC EDGAR -> bronze_fundamentals (~3 min)
+uv run python scripts/build_local.py     # local silver + gold + forward returns (~3 min)
+uv run python scripts/evaluate.py --candidates  # walk-forward verdict on candidate signals
 uv run pytest tests/test_engine_parity.py -q   # same SQL, both engines
 ```
+EDGAR needs a contact User-Agent: `EDGAR_USER_AGENT` in `.env`, falling back to
+`ALERT_EMAIL`. Neither set -> the backfill refuses to run.
 
 Indicators are shared code, not a port: `common.indicators.build_signal_series`
 is pure pandas and runs in both places, so parity there is by construction. Only
@@ -53,8 +57,7 @@ before use, with differences resolved to the common subset rather than branched.
 | `.env` | Secrets, `WATCHLIST` | No |
 | `src/common/tickers.txt` | The real watchlist | Yes - `watchlist.py seed` |
 | `warehouse/` | Local DuckDB | Yes - `backfill.py`, ~2 min |
-| `knowledge/` | Research and KB | **No** |
-| `POSITIONS.md` | Held positions and priority | No |
+| `knowledge/` | Research and KB, incl. `positions.md` (held positions, by account) | **No** |
 | `_relay.md` | Handoff scratch file, bidirectional | No |
 
 Never echo the contents of these into commit messages, tracked files, or
@@ -101,6 +104,6 @@ to materialize `tickers.txt` for a manual deploy. Mirror the change to the `WATC
 
 ## Code size — track after major changes to prevent bloat
 ```bash
-find src   -name "*.py" -exec wc -l {} +   # ~4396 across 31 files
-find tests -name "*.py" -exec wc -l {} +   # ~2842 across 12 files
+find src   -name "*.py" -exec wc -l {} +   # ~5121 across 40 files
+find tests -name "*.py" -exec wc -l {} +   # ~3869 across 21 files
 ```

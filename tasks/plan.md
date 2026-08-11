@@ -13,6 +13,14 @@ P0 (score inversion, immutable snapshot, freshness gate), watchlist merged to
 324, engine parity harness, and L1+L2 of the local warehouse (1.19M raw price
 rows and 1.13M signal rows, built locally in ~2 min against ~18 on Databricks).
 
+Shipped 2026-08-11: EDGAR CompanyFacts end to end. `scripts/
+backfill_fundamentals.py` -> `bronze_fundamentals` (268K as-filed facts, 263
+symbols, 2009+); `common.fundamentals` -> `silver_fundamental_metrics` (PIT
+knowledge series keyed on `filed`, restatement-aware, amendment-safe);
+`scoring.candidates` -> `gold_candidate_signals` (E/P, gross profitability,
+ROE at every (symbol, as_of_date), percentile-ranked over non-nulls, zero
+composite weight). Wired into `build_local.py`. 260 tests.
+
 ### Ordered tasks
 
 Dependencies: L3 -> L4 -> L5. Within L3, 6 and 7 are independent once 5 lands.
@@ -28,17 +36,21 @@ open - decide before task 11, not during it.
 forward returns can be measured is the current ranking with a new name on it,
 and the current ranking has never been shown to predict anything.
 
-**L3 - evaluation harness** (next)
+**L3 - evaluation harness** - **DONE 2026-08-11.** `src/backtest/`
+(returns, costs, metrics, harness) + `scripts/evaluate.py`. All four verify
+gates hold: hand-computed return matches to 6dp; zero-cost exceeds costed by
+exactly the modelled bps; a synthetic perfect predictor scores IC 1.0 with
+monotonic deciles; the benchmark yields exactly zero excess, a seeded random
+signal finds no edge in 16 years, and a shifted leak collapses. Cost model
+decision: flat 10 bps/side (spread-aware rejected at this horizon). Monthly
+eval dates - daily would overlap the forecast windows and fake the t-stat.
 
-4. Forward returns at 21/63/252 sessions, filled at next open -> verify: a
-   hand-computed return for one symbol over one window matches to 6dp.
-5. Cost and slippage model -> verify: a zero-cost run exceeds a costed run by
-   exactly the modelled basis points.
-6. Metrics - IC, decile monotonicity, hit rate, turnover, excess vs equal-weight
-   -> verify: a synthetic perfectly-predictive feature scores IC == 1.0 and
-   monotonic deciles.
-7. Known-answer and look-ahead tests -> verify: harness on the benchmark returns
-   ~zero excess; shifting features forward one day degrades every metric.
+First harness read (survivorship caveat applies, levels inflated): earnings
+yield IC 0.033 at 126 sessions (t 3.9), stronger at 252 (t 5.6), turnover
+0.08; gross profitability positive IC but negative top-decile excess (works
+mid-rank, not as a decile-10 bet); ROE weak (t < 2.3, matches Novy-Marx);
+incumbent 30d momentum scores nothing at its own horizon (t 0.5). No
+promotion yet: trial logging (9b) and the correlation gate do not exist.
 
 **L4 - variant comparison**
 
@@ -46,14 +58,15 @@ and the current ranking has never been shown to predict anything.
    run from one command and produce different, reproducible results.
 9. Results recorded with the methodology that produced them -> verify: re-running
    a recorded variant reproduces its output exactly.
-9b. **Log the trial count prospectively** - every variant evaluated, including
-   abandoned ones, recorded before its result is seen -> verify: the count is
-   queryable and monotonic. Without it a Sharpe cannot be deflated and the best
-   of N variants cannot be distinguished from the luckiest of N
-   (Bailey & Lopez de Prado 2014). Retrofitting is impossible by construction:
-   trials you did not record are trials you cannot count. Accept a factor at
-   t > 3.0, not 2.0 (Harvey, Liu & Zhu 2016). See
-   `knowledge/research/2026-08-10-failure-modes.md`.
+9b. **DONE 2026-08-11.** Trial log ships as `backtest.trials` writing the
+   tracked, append-only `trial_log.jsonl` at the repo root - deliberately not
+   in the regenerable `warehouse/`. Logged BEFORE any result exists (the
+   schema has no result field); `evaluate.py` logs every run, re-runs
+   over-count on purpose (conservative), no opt-out flag. The four
+   evaluations run before the log existed are retro-logged with an intent
+   saying exactly that. Rationale stands: without the count the best of N is
+   indistinguishable from the luckiest of N (Bailey & Lopez de Prado 2014);
+   accept a factor at t > 3.0, not 2.0 (Harvey, Liu & Zhu 2016).
 
 **L5 - promote**
 
@@ -103,12 +116,11 @@ Specced in `tasks/SPEC-SIGNAL-TIERS.md`.
 
 ### Decisions needed before the work reaches them
 
-- **Before task 6:** cost model - flat basis points or spread-aware? Flat is
-  defensible at a 3-12 month horizon and much simpler.
 - **Before task 8:** how a variant is expressed - config entry or SQL fragment?
-- **Before task 11:** the forecast window (6 months assumed) and how the
-  outperformance probability is actually computed. The current composite is a
-  placeholder, not a candidate answer.
+- **Before task 11:** how the outperformance probability is actually computed.
+  The current composite is a placeholder, not a candidate answer. The forecast
+  window is ruled (2026-08-11): 126 sessions (~6 months) provisionally, final
+  choice from task 6's IC-by-horizon decay report, per SPEC-SIGNAL-TIERS §2.
 - **Before task 13:** which broad universe(s), and how many tiers. One
   (large-cap) is simplest; several give better context at more data cost.
 - **Before task 14:** what "meets my criteria for profitability" means as a
@@ -140,6 +152,19 @@ Specced in `tasks/SPEC-SIGNAL-TIERS.md`.
    is a function in Spark and a bare keyword in DuckDB. Any SQL that must run in
    both goes through `tests/test_engine_parity.py` first, and differences are
    resolved to the common subset - an engine branch is two implementations again.
+
+0c. **EDGAR's ticker maps are incomplete and CIKs are not forever.**
+   `company_tickers.json` is missing real registrants (AEP was absent;
+   `common.edgar.resolve_cik_fallback` resolves via browse-edgar). XOM's
+   ticker now points at a new holding-company CIK with one quarter of
+   history - the operating company's history lives under the old CIK, so XOM
+   has no silver fundamentals until the holdco's first 10-K (or a
+   predecessor-CIK merge, which needs a ruling). And multi-class filers
+   (BRK) report share counts as dimensioned facts CompanyFacts omits: the
+   undimensioned count can be years stale, which is why
+   `scoring.candidates` nulls earnings yield when the share count is older
+   than 400 days. Stale would otherwise score as an E/P off by orders of
+   magnitude.
 
 1. **Never raise numpy above 1.x in `databricks.yml`.** Serverless
    `environment_version: "3"` ships `pyarrow==15.0.2`, which requires
