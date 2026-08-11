@@ -61,8 +61,17 @@ and the current ranking has never been shown to predict anything.
     validate` OK, CI deploy green, `METHODOLOGY_VERSION` bumped so past
     snapshots are not restated.
 
-**L6 - buy/sell calls, tiering, and discovery** (added 2026-08-10; not yet
-specced - see the note in `tasks/SPEC-RECOMMENDATION-ENGINE.md` open questions)
+**L6 - buy/sell calls, tiering, and discovery**
+Specced in `tasks/SPEC-SIGNAL-TIERS.md`.
+
+10b. Signal tier registry - every signal is `scored`, `candidate` or
+    `monitored`, held as data so promotion is a recorded event -> verify: a
+    `candidate` provably contributes zero weight; promotion requires
+    walk-forward IC at t > 3.0 with the trial count logged; demotion is
+    automatic when a scored signal's IC turns insignificant.
+    Initial: the four incumbents `scored` (they are incumbents, not winners);
+    12-1 momentum, gross profitability, realized volatility, beta and earnings
+    yield `candidate`; RSI/MFI/MACD/Bollinger/OBV/ATR `monitored`.
 
 11. Emit a buy/sell call per symbol, defined as "outperforms the benchmark over
     the forecast window" -> verify: on held-out history the buy set beats the

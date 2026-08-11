@@ -48,6 +48,21 @@ uv run python scripts/build_local.py   # rebuild local silver + gold, ~2 min
 If `warehouse/` is missing (gitignored, so it does not travel between devices):
 `uv run python scripts/backfill.py` first - about 2 minutes for full history.
 
+### Established 2026-08-10, spec at `tasks/SPEC-SIGNAL-TIERS.md`
+
+- **Validation holds out TIME, not symbols.** Stocks co-move, so a held-out set
+  of tickers mostly measures the market. Score as of a past date using only what
+  was knowable then, measure realized excess, roll forward.
+- **Signals are tiered, never deleted.** `scored` (in the composite),
+  `candidate` (computed and evaluated, weight zero), `monitored` (stored only).
+  A deleted signal stops accumulating evidence, so the decision to drop it can
+  never be revisited on data.
+- **The four current components are incumbents, not winners.** None earned its
+  tier on evidence. 12-1 momentum, gross profitability and realized volatility
+  enter as candidates with better priors.
+- **Trial counts are logged before results are seen.** Cannot be retrofitted.
+- `POSITIONS.md` is gitignored - held positions and priority live there.
+
 ### Needed from the user next session
 
 - **The held-position subset.** A list of tickers currently held, to be tracked
