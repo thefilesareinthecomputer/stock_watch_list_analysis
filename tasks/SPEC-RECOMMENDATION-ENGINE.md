@@ -296,6 +296,17 @@ broken one drift on unfalsifiably.
 - **Universe** - rule-based top-N by dollar volume, not licensed index
   membership.
 
+**Added 2026-08-10, not yet specced** (tracked as tasks 11-13 in `plan.md`):
+
+- **Buy/sell calls per symbol.** The objective already implies the criterion -
+  buy means "outperforms the benchmark over the window" - but nothing here
+  specifies how the probability is computed or how a rank becomes a label.
+- **A held-position priority tier.** Partially covered by P6 and open question 2
+  below, but not as a first-class tier the pipeline treats differently.
+- **A discovery sweep.** P2's rule-based universe is the mechanism, but framed
+  as "rank a broader universe" rather than "screen for candidates and promote
+  them into tracking". These differ in output and need writing down.
+
 **Still open:**
 
 1. **Benchmark and N.** SPY assumed. What N for the universe - 500, 1000?

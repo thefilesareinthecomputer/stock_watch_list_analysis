@@ -17,6 +17,17 @@ rows and 1.13M signal rows, built locally in ~2 min against ~18 on Databricks).
 
 Dependencies: L3 -> L4 -> L5. Within L3, 6 and 7 are independent once 5 lands.
 
+### Target state
+
+Every symbol carries a **buy or sell call** at pipeline runtime, where buy means
+"most likely to outperform the benchmark over ~6 months". Relative by
+definition, matching the settled objective. The calculation and the window are
+open - decide before task 11, not during it.
+
+**Sequencing constraint:** tasks 4-7 gate task 11. A buy label emitted before
+forward returns can be measured is the current ranking with a new name on it,
+and the current ranking has never been shown to predict anything.
+
 **L3 - evaluation harness** (next)
 
 4. Forward returns at 21/63/252 sessions, filled at next open -> verify: a
@@ -42,11 +53,36 @@ Dependencies: L3 -> L4 -> L5. Within L3, 6 and 7 are independent once 5 lands.
     validate` OK, CI deploy green, `METHODOLOGY_VERSION` bumped so past
     snapshots are not restated.
 
+**L6 - buy/sell calls, tiering, and discovery** (added 2026-08-10; not yet
+specced - see the note in `tasks/SPEC-RECOMMENDATION-ENGINE.md` open questions)
+
+11. Emit a buy/sell call per symbol, defined as "outperforms the benchmark over
+    the forecast window" -> verify: on held-out history the buy set beats the
+    sell set on forward excess return, and the harness's known-answer test still
+    returns ~zero on the benchmark. **Gated by tasks 4-7.**
+12. Priority tier for held positions - a subset of the watchlist tracked more
+    closely, sourced from private config like the watchlist itself -> verify:
+    tier membership never leaks into a tracked file; held names are hard-gated
+    by the freshness check (they already are, via `RECOMMENDED_DEPTH`).
+13. Discovery sweep - screen beyond the watchlist for candidates meeting the
+    profitability criteria, and promote them into tracking -> verify: the sweep
+    surfaces at least one name absent from the watchlist that ranks above its
+    median, and promotion is recorded so the universe stays reconstructable.
+
+    This is the concrete form of the parent spec's rule-based universe (P2). It
+    is what breaks the feedback loop: ranking only the watchlist can never tell
+    you the whole watchlist is wrong.
+
 ### Decisions needed before the work reaches them
 
 - **Before task 6:** cost model - flat basis points or spread-aware? Flat is
   defensible at a 3-12 month horizon and much simpler.
 - **Before task 8:** how a variant is expressed - config entry or SQL fragment?
+- **Before task 11:** the forecast window (6 months assumed) and how the
+  outperformance probability is actually computed. The current composite is a
+  placeholder, not a candidate answer.
+- **Before task 13:** what "meets my criteria for profitability" means as a
+  screen, expressed as rules over data we hold.
 - **Before P4 of the parent spec:** rank value/quality within sector, or accept
   the structural sector tilt deliberately.
 

@@ -10,22 +10,49 @@ to state + next action + pointer. Full records: `tasks/completed/`.
 Read in this order: `tasks/SPEC-LOCAL-WAREHOUSE.md` (what and why),
 `tasks/plan.md` (the ordered tasks), `SPEC.md` (invariants that must hold).
 
-L1 and L2 are done. The local pipeline runs end to end: bronze -> silver -> gold,
-1.13M signal rows across 324 symbols, in ~2 minutes.
+### The goal
 
-**NEXT ACTION: task 4 - forward returns.** Build `src/backtest/` computing
-returns at 21/63/252 sessions from `warehouse/market.duckdb`, filled at the
-**next open** (data lands after the close, so a same-close fill is fiction).
-Verify by hand-computing one symbol over one window and matching to 6dp.
-Then task 5 (costs), 6 (IC and deciles), 7 (known-answer and look-ahead).
+**Every symbol on the list gets a buy or sell call at pipeline runtime, and the
+call is trustworthy.**
+
+A **buy** means: this will most likely outperform the benchmark over roughly the
+next 6 months. That is the definition to build toward - it is deliberately a
+*relative* claim, matching the settled objective in
+`tasks/SPEC-RECOMMENDATION-ENGINE.md` (below the index is failure).
+
+How that probability is actually calculated, and whether 6 months is the right
+window, are **open and decided next session**. Do not assume the current
+four-component composite is the answer; it is a placeholder whose components are
+three correlated oscillators plus a broken value metric (parent spec P4).
+
+### Sequence
+
+L1 and L2 are done - the local pipeline runs bronze -> silver -> gold, 1.13M
+signal rows, ~2 minutes.
+
+**START WITH task 4 - forward returns.** Nothing can be called reliable until
+there is a way to measure whether past calls were right. Build `src/backtest/`
+computing returns at 21/63/252 sessions from `warehouse/market.duckdb`, filled
+at the **next open** (data lands after the close, so a same-close fill is
+fiction). Verify by hand-computing one symbol over one window to 6dp. Then 5
+(costs), 6 (IC and deciles), 7 (known-answer and look-ahead).
+
+Only once 4-7 exist is there any basis for calling a signal reliable. Emitting
+buy/sell labels before that is just renaming the current ranking.
 
 ```bash
-uv run pytest tests/ -q            # 232 passing
+uv run pytest tests/ -q                # 232 passing
 uv run python scripts/build_local.py   # rebuild local silver + gold, ~2 min
 ```
 
 If `warehouse/` is missing (gitignored, so it does not travel between devices):
 `uv run python scripts/backfill.py` first - about 2 minutes for full history.
+
+### Needed from the user next session
+
+- **The held-position subset.** A list of tickers currently held, to be tracked
+  more closely than the rest. Put it in `_relay.md`.
+- **A ruling on the forecast window** - 6 months, or something else.
 
 ## State as of 2026-08-10
 
