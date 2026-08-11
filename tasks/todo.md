@@ -3,41 +3,58 @@
 Session-to-session handoff snapshot. Resolved threads leave; survivors compress
 to state + next action + pointer. Full records: `tasks/completed/`.
 
-## State as of 2026-08-09
+## Start here - next session
 
-Desktop is fully configured and verified. `develop` and `main` are aligned at
-`52489de`; CI green (test -> validate -> deploy). Job definition on Databricks
-came from CI on `main`. Record: `completed/plan-completed-2026-08-09.md`.
+**Goal: turn the POC into a real recommendation engine, local-first.**
+
+Read in this order: `tasks/SPEC-LOCAL-WAREHOUSE.md` (what and why),
+`tasks/plan.md` (the ordered tasks), `SPEC.md` (invariants that must hold).
+
+**NEXT ACTION: task 1 - adjustment factors.** Compute them from `dividend` and
+`split_ratio` in `warehouse/market.duckdb`, derive the adjusted series rather
+than storing it, and reconcile against yfinance's `adj_close` within 0.5% for
+ten dividend payers across three split events.
+
+```bash
+uv run pytest tests/ -q                     # 216 passing
+uv run python -c "import duckdb; print(duckdb.connect('warehouse/market.duckdb').execute('SELECT COUNT(*) FROM bronze_prices').fetchone())"
+```
+
+If `warehouse/` is missing (gitignored, so it does not travel between devices):
+`uv run python scripts/backfill.py` - about 20 minutes for the full history.
+
+## State as of 2026-08-10
+
+`develop` and `main` aligned, CI green. Watchlist is 324 symbols, all resolving.
+
+Shipped today: score inversion fixed (all four components were reversed), an
+append-only `gold.recommendations` snapshot, a tiered freshness gate, the
+engine-parity harness, and the local backfill.
 
 ## Open
 
-1. **Laptop not yet set up.** Full steps are in README "Quick Start". Two
-   corrections that the older instructions got wrong:
-   - Do **not** `brew install terraform` - the CLI downloads its own.
-   - Recreate the private watchlist with
-     `uv run python scripts/watchlist.py seed` (reads `WATCHLIST` from the dotenv),
-     not by copying the example. The example is now a 10-ticker starter, not the
-     real list.
+1. **Nothing runs locally yet beyond the backfill.** DuckDB holds bronze prices
+   and executes fixtures in tests. There is no local silver, no indicators, no
+   evaluation. That is L2 and L3.
 
-2. **Watchlist swept and corrected - 318 tickers, all resolving.** Eight dead
-   symbols removed and two successors added (`SM`, `XYZ`) on 2026-08-09; the
-   causes are recorded in `src/common/ticker_migrations.json`. Dotenv, the
-   `WATCHLIST` repo secret and `tickers.txt` all carry the same 318.
-   **Recurring:** run `uv run python scripts/watchlist.py check` after any
-   watchlist edit, and monthly when the 30-day cache expires. New dead symbols
-   print as `UNMAPPED` - research and add them to the migrations file.
+2. **Three decisions the work will reach.** Cost model (flat bps vs
+   spread-aware) before task 6; how a variant is expressed (config vs SQL
+   fragment) before task 8; sector-neutral ranking before the parent spec's P4.
 
-3. **`feature/upgrade-stock-pipeline` still exists on origin** at `bd0694f`,
-   fully superseded by `develop`. **Decision needed:** delete it or keep it.
-   Not deleting a remote branch without a ruling.
+3. **Backtest results cannot set a go-live threshold.** Survivorship (the
+   universe is today's survivors) and absent fundamentals history make the
+   levels biased. The harness is a mechanics check and variant comparator; real
+   evidence comes from the forward paper track.
 
-4. **`setup-uv` is pinned to exact `v9.0.0`**, so it will not pick up patch
-   releases. Bump manually, or switch to a floating `v9` tag once astral
-   publishes one.
+4. **`feature/upgrade-stock-pipeline` still on origin** at `bd0694f`, fully
+   superseded. Delete or keep - needs a ruling.
+
+5. **`setup-uv` pinned to exact `v9.0.0`**, so it will not pick up patches.
 
 ## Deferred, not blocking
 
-- `requests` is pinned at the base-image version (2.32.2) rather than the newest.
-  Raising it means proving it against the env-3 base first; see `plan.md` item 2.
-- The env-3 base ships pandas 1.5.3 and the job upgrades to 3.0.2 on every run.
-  That predates this session and is unchanged, but it is install time on each run.
+- Sharadar (paid) is the only clean fix for delisted price history; deferred
+  until backtest levels matter, which per item 3 is not yet.
+- Congressional trades stay display-only. Lowest-trust source.
+- FRED, Fama-French, congressional and yfinance fundamentals stay on Databricks
+  and are deliberately not ported - they never touch a rank.

@@ -17,6 +17,9 @@ venv/
 .DS_Store
 Thumbs.db
 app_generated_files/
+# Local DuckDB warehouse — regenerable from scripts/backfill.py, and holds the
+# private watchlist's data
+warehouse/
 .pytest_cache/
 notes/
 __archive/
