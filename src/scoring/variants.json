@@ -1,0 +1,30 @@
+[
+  {
+    "name": "incumbent_equal_4",
+    "intent": "The current composite expressed as a variant, for baseline comparison. Differs from production in null handling: non-positive P/E scores neutral here, worst-sentinel there.",
+    "components": [
+      {"name": "momentum_30d", "expression": "change_30d_pct", "ascending": true, "weight": 0.25},
+      {"name": "value_pe", "expression": "CASE WHEN pe_ratio > 0 THEN -pe_ratio END", "ascending": true, "weight": 0.25},
+      {"name": "risk_rsi", "expression": "rsi", "ascending": false, "weight": 0.25},
+      {"name": "quality_mfi", "expression": "mfi", "ascending": true, "weight": 0.25}
+    ]
+  },
+  {
+    "name": "mom12_1_ep_lowvol",
+    "intent": "The literature-backed candidates: 12-1 momentum (skip the reversal month), earnings yield from EDGAR, low volatility via ATR share of price as the available proxy for trailing realized vol.",
+    "components": [
+      {"name": "momentum_12_1", "expression": "(1 + change_365d_pct / 100.0) / (1 + change_30d_pct / 100.0) - 1", "ascending": true, "weight": 0.4},
+      {"name": "earnings_yield", "expression": "earnings_yield", "ascending": true, "weight": 0.3},
+      {"name": "low_vol", "expression": "atr_14d / last_closing_price", "ascending": false, "weight": 0.3}
+    ]
+  },
+  {
+    "name": "candidates_equal",
+    "intent": "The three EDGAR candidates alone, equal weight: what fundamentals contribute without any price signal.",
+    "components": [
+      {"name": "earnings_yield", "expression": "earnings_yield", "ascending": true, "weight": 1.0},
+      {"name": "gross_profitability", "expression": "gross_profitability", "ascending": true, "weight": 1.0},
+      {"name": "roe", "expression": "roe", "ascending": true, "weight": 1.0}
+    ]
+  }
+]

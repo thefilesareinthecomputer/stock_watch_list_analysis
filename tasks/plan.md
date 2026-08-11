@@ -52,12 +52,24 @@ mid-rank, not as a decile-10 bet); ROE weak (t < 2.3, matches Novy-Marx);
 incumbent 30d momentum scores nothing at its own horizon (t 0.5). No
 promotion yet: trial logging (9b) and the correlation gate do not exist.
 
-**L4 - variant comparison**
+**L4 - variant comparison** - **DONE 2026-08-11.**
 
-8. Scoring variants expressed as data, not code edits -> verify: two variants
-   run from one command and produce different, reproducible results.
-9. Results recorded with the methodology that produced them -> verify: re-running
-   a recorded variant reproduces its output exactly.
+8. **DONE.** Variants are config entries (`src/scoring/variants.json` +
+   `scoring.variants`), not SQL fragments: named components with a
+   constrained scalar expression, direction flag and weight; validation
+   rejects statement separators. `scripts/compare_variants.py` runs them all
+   from one command. Per-date percentiles over non-nulls, missing scores
+   neutral - same discipline as production.
+9. **DONE.** Results land in `results/variants/<name>.json` carrying the
+   full definition, its sha256, settings and a data fingerprint; re-running
+   an unchanged variant reproduces the file byte for byte (tested). Every
+   variant run logs a trial first.
+
+   First comparison (185 monthly dates, horizon 126): `candidates_equal`
+   (three EDGAR fundamentals, equal weight) scores IC 0.035 at t 5.3 with
+   0.06 turnover; the incumbent-as-variant scores IC 0.016 at t 1.7 with
+   0.89 turnover. Survivorship inflates fundamentals persistence on a
+   survivor universe, so this ranks variants, not proves edge.
 9b. **DONE 2026-08-11.** Trial log ships as `backtest.trials` writing the
    tracked, append-only `trial_log.jsonl` at the repo root - deliberately not
    in the regenerable `warehouse/`. Logged BEFORE any result exists (the

@@ -42,9 +42,16 @@ test (`tests/test_e2e_local.py`) walks bronze -> signals -> gold composite ->
 fundamentals -> candidates -> forward returns -> verdict -> trial log on
 synthetic data. 287 tests.
 
-**START WITH task 8 - variants as data** (decide config entry vs SQL fragment
-first), then the L6 tier registry (10b), which promotion decisions read from.
-Every variant sweep now gets counted automatically.
+**Tasks 8+9 are DONE (2026-08-11): variants as config entries** (decision:
+not SQL fragments), compared from one command, results recorded with their
+methodology hash, byte-reproducible, every run trial-logged (count: 7). See
+plan.md L4 for the first comparison - the EDGAR candidates beat the
+incumbent composite on every metric with 15x less turnover, survivorship
+caveat standing.
+
+**START WITH task 10b - the signal tier registry**, which promotion
+decisions read from; then L5 (task 10, promote a winning variant to
+Databricks behind a METHODOLOGY_VERSION bump).
 
 ```bash
 uv run pytest tests/ -q                # 232 passing

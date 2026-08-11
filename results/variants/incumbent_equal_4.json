@@ -1,0 +1,133 @@
+{
+  "data": {
+    "max_as_of_date": "2026-08-10",
+    "silver_signal_rows": 1125563,
+    "symbols": 324
+  },
+  "definition": {
+    "components": [
+      {
+        "ascending": true,
+        "expression": "change_30d_pct",
+        "name": "momentum_30d",
+        "weight": 0.25
+      },
+      {
+        "ascending": true,
+        "expression": "CASE WHEN pe_ratio > 0 THEN -pe_ratio END",
+        "name": "value_pe",
+        "weight": 0.25
+      },
+      {
+        "ascending": false,
+        "expression": "rsi",
+        "name": "risk_rsi",
+        "weight": 0.25
+      },
+      {
+        "ascending": true,
+        "expression": "mfi",
+        "name": "quality_mfi",
+        "weight": 0.25
+      }
+    ],
+    "intent": "The current composite expressed as a variant, for baseline comparison. Differs from production in null handling: non-positive P/E scores neutral here, worst-sentinel there.",
+    "name": "incumbent_equal_4"
+  },
+  "definition_hash": "76167b3110db44b720e291ad4f756ba5a38b9bdb8ae602b758fb846779a8e188",
+  "metrics": {
+    "126": {
+      "decile_means": {
+        "0": 0.08163,
+        "1": 0.0692,
+        "2": 0.06787,
+        "3": 0.04803,
+        "4": 0.05303,
+        "5": 0.05695,
+        "6": 0.04707,
+        "7": 0.05087,
+        "8": 0.07557,
+        "9": 0.10664
+      },
+      "excess_vs_equal_weight_gross": 0.04091676458368251,
+      "excess_vs_equal_weight_net": 0.03891676458368251,
+      "hit_rate": 0.49012908124525434,
+      "ic": {
+        "by_year": {
+          "2010": -0.0218,
+          "2011": 0.016,
+          "2012": -0.0202,
+          "2013": 0.0249,
+          "2014": 0.0466,
+          "2015": 0.0398,
+          "2016": 0.0114,
+          "2017": 0.0807,
+          "2018": -0.0161,
+          "2019": 0.0024,
+          "2020": 0.0864,
+          "2021": -0.019,
+          "2022": -0.0171,
+          "2023": -0.0015,
+          "2024": 0.0102,
+          "2025": 0.0044,
+          "2026": -0.0267
+        },
+        "mean": 0.015501918344082107,
+        "n_dates": 185,
+        "t_stat": 1.6541904700081307
+      },
+      "monotonicity": -0.006060606060606061,
+      "turnover": 0.8904745624818879
+    },
+    "252": {
+      "decile_means": {
+        "0": 0.21412,
+        "1": 0.14044,
+        "2": 0.14128,
+        "3": 0.09069,
+        "4": 0.11342,
+        "5": 0.12426,
+        "6": 0.14676,
+        "7": 0.14282,
+        "8": 0.19875,
+        "9": 0.25573
+      },
+      "excess_vs_equal_weight_gross": 0.09886692423862964,
+      "excess_vs_equal_weight_net": 0.09686692423862962,
+      "hit_rate": 0.49970408364568947,
+      "ic": {
+        "by_year": {
+          "2010": -0.0187,
+          "2011": 0.0548,
+          "2012": 0.0406,
+          "2013": 0.0226,
+          "2014": 0.043,
+          "2015": -0.0397,
+          "2016": 0.0236,
+          "2017": 0.072,
+          "2018": -0.0011,
+          "2019": 0.0331,
+          "2020": 0.0266,
+          "2021": 0.0086,
+          "2022": -0.0098,
+          "2023": 0.0382,
+          "2024": 0.0314,
+          "2025": 0.0459
+        },
+        "mean": 0.0247766082358185,
+        "n_dates": 179,
+        "t_stat": 2.7407150860118668
+      },
+      "monotonicity": 0.3696969696969697,
+      "turnover": 0.8901130479043282
+    }
+  },
+  "settings": {
+    "cost_bps": 10.0,
+    "eval_dates": "monthly",
+    "horizons": [
+      126,
+      252
+    ]
+  }
+}

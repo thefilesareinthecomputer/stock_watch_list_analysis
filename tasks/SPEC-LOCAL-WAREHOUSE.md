@@ -166,10 +166,12 @@ candidate earns promotion.
 - Runner: `scripts/evaluate.py`, one-screen verdict with per-year IC folds
   and the standing caveats.
 
-### L4 - Variant comparison
-- Candidate scoring definitions as data, not code edits, so variants are
-  reproducible and comparable.
-- Results recorded with the methodology that produced them.
+### L4 - Variant comparison — **DONE** 2026-08-11
+- [x] Variants as config entries: `src/scoring/variants.json`, validated,
+      hashed, run from one command (`scripts/compare_variants.py`).
+- [x] Results recorded with methodology hash and data fingerprint in
+      `results/variants/`; re-runs reproduce files byte for byte.
+- [x] Every variant evaluation logs a trial before its result exists.
 
 ### L5 - Promote
 - A winning variant bumps `METHODOLOGY_VERSION` and deploys the same SQL to
@@ -213,9 +215,8 @@ let a local result reach production without passing parity.
 
 ## Open questions
 
-1. **How variants are expressed** - config entries, or small SQL fragments?
-   Affects how L4 stores and compares them.
-
-Resolved 2026-08-11: evaluation universe is the watchlist now (biased,
+None. Resolved 2026-08-11: evaluation universe is the watchlist now (biased,
 caveated on every result) until the parent spec's P2 rule-based universe;
-cost model is flat 10 bps/side, spread-aware rejected at this horizon.
+cost model is flat 10 bps/side, spread-aware rejected at this horizon;
+variants are config entries with constrained expressions, not SQL fragments,
+so they stay recordable, hashable and reproducible.
