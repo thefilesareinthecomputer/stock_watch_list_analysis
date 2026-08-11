@@ -64,14 +64,25 @@ specced - see the note in `tasks/SPEC-RECOMMENDATION-ENGINE.md` open questions)
     closely, sourced from private config like the watchlist itself -> verify:
     tier membership never leaks into a tracked file; held names are hard-gated
     by the freshness check (they already are, via `RECOMMENDED_DEPTH`).
-13. Discovery sweep - screen beyond the watchlist for candidates meeting the
-    profitability criteria, and promote them into tracking -> verify: the sweep
-    surfaces at least one name absent from the watchlist that ranks above its
-    median, and promotion is recorded so the universe stays reconstructable.
+13. **Line of sight - broad universe(s) ranked continuously.** One or more
+    universes beyond the watchlist (rule-based top-N by dollar volume; possibly
+    several tiers, e.g. large-cap and small-cap) scored every run, with the
+    watchlist and held tier as *tags* on top rather than as the universe ->
+    verify: a symbol can be ranked without being tracked, and the watchlist's
+    position within the broader universe is queryable ("am I holding the
+    best-ranked names available, or just the ones I know?").
 
-    This is the concrete form of the parent spec's rule-based universe (P2). It
-    is what breaks the feedback loop: ranking only the watchlist can never tell
-    you the whole watchlist is wrong.
+    This is what breaks the feedback loop. Ranking only the watchlist can never
+    reveal that the whole watchlist is wrong.
+
+14. **Promotion - expand the tracking list.** Candidates from task 13 that meet
+    the profitability criteria get promoted into tracking -> verify: promotion
+    is an explicit, recorded event (symbol, date, reason, universe of origin) so
+    the tracked set stays reconstructable at any past date; and demotion exists
+    too, or the list only ever grows.
+
+    Distinct from 13 on purpose: 13 is continuous visibility, 14 is a deliberate
+    act that changes what is tracked and eventually what is held.
 
 ### Decisions needed before the work reaches them
 
@@ -81,8 +92,11 @@ specced - see the note in `tasks/SPEC-RECOMMENDATION-ENGINE.md` open questions)
 - **Before task 11:** the forecast window (6 months assumed) and how the
   outperformance probability is actually computed. The current composite is a
   placeholder, not a candidate answer.
-- **Before task 13:** what "meets my criteria for profitability" means as a
-  screen, expressed as rules over data we hold.
+- **Before task 13:** which broad universe(s), and how many tiers. One
+  (large-cap) is simplest; several give better context at more data cost.
+- **Before task 14:** what "meets my criteria for profitability" means as a
+  screen, expressed as rules over data we hold - and whether promotion is
+  automatic or proposed for approval.
 - **Before P4 of the parent spec:** rank value/quality within sector, or accept
   the structural sector tilt deliberately.
 

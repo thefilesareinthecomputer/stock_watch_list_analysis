@@ -53,6 +53,9 @@ If `warehouse/` is missing (gitignored, so it does not travel between devices):
 - **The held-position subset.** A list of tickers currently held, to be tracked
   more closely than the rest. Put it in `_relay.md`.
 - **A ruling on the forecast window** - 6 months, or something else.
+- **Which broad universe(s) to keep in view** - one large-cap tier, or several.
+  Line of sight (task 13) and promotion into tracking (task 14) are both wanted
+  and are separate mechanisms.
 
 ## State as of 2026-08-10
 

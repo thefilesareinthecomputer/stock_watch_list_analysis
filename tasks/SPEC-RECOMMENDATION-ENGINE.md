@@ -303,9 +303,13 @@ broken one drift on unfalsifiably.
   specifies how the probability is computed or how a rank becomes a label.
 - **A held-position priority tier.** Partially covered by P6 and open question 2
   below, but not as a first-class tier the pipeline treats differently.
-- **A discovery sweep.** P2's rule-based universe is the mechanism, but framed
-  as "rank a broader universe" rather than "screen for candidates and promote
-  them into tracking". These differ in output and need writing down.
+- **Line of sight, and promotion - both, and they are different.** P2's
+  rule-based universe gives continuous visibility: one or more broad universes
+  ranked every run with the watchlist and held tier as tags on top, so the
+  question "am I holding the best available names or just the ones I know" is
+  answerable. Promotion is the separate, deliberate act of moving a candidate
+  into tracking, recorded so the tracked set is reconstructable at any past
+  date - and it needs a demotion path, or the list only ever grows.
 
 **Still open:**
 
