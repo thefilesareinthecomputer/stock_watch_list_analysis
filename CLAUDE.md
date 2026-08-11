@@ -48,7 +48,7 @@ so parity there is by construction. SQL that must run on both engines goes throu
 | `src/common/tickers.txt` | The real watchlist | Yes - `watchlist.py seed` |
 | `warehouse/` | Local DuckDB | Yes - `backfill.py`, ~2 min |
 | `calls_log.jsonl` | Buy/sell call record (append-only evidence) | **No** |
-| `knowledge/` | Research and KB, incl. `positions.md` (held positions) | **No** |
+| `knowledge/` | Research and KB, incl. `POSITIONS.md` (held positions) | **No** |
 | `_relay.md` | Handoff scratch file, bidirectional | No |
 
 Never echo the contents of these into commit messages, tracked files, or anything

@@ -12,8 +12,12 @@ relative claim; below the index is failure.
 Read in this order: `tasks/plan.md` (ordered tasks + gotchas), `SPEC.md`
 (invariants), `tasks/SPEC-SIGNAL-TIERS.md` (tiers and calls).
 
-**State: task 11 is BUILT - the call machinery is live and waiting for the
-calendar.** State machine + hysteresis, durable `calls_log.jsonl` ->
+**State: tasks 11 AND 12 are BUILT - the call machinery is live and waiting
+for the calendar, and the held tier rides on top.** Task 12: `common.positions`
+parses `knowledge/POSITIONS.md` into warehouse-only `gold_held_positions`
+(72 tracked, 1 unscored on real data); stale held names fail the build.
+
+Task 11: State machine + hysteresis, durable `calls_log.jsonl` ->
 `gold_calls`, frozen expectations with source hash and 0.5 haircut,
 settle->report->emit orchestrator, drift detection with immutable
 post-mortems. Replay validation green (spread positive 16/17 years @126,

@@ -122,13 +122,15 @@ event; grade a vintage against anything but its own frozen expectation.
 1. **Drift constants** (5 / 3 / fold-t bar) - defaults above; tune only by
    recorded registry event once real settlements exist.
 2. **Haircut factor** 0.5 - revisit when the paper track has its own data.
-3. **Does the held-position tier (task 12) gate call visibility** or only
-   report ordering? Decide when task 12 lands.
 
 ## Rulings (2026-08-11, at build time)
 
 - **State machine start**: all symbols start at `none`; the paper record
   inherits no simulated state. (Was open question 4.)
+- **Held tier does not gate calls** (was open question 3, resolved when
+  task 12 landed): calls are emitted for every eligible symbol regardless
+  of held status; `gold_held_positions` is an overlay that joins the
+  latest call per held name.
 - **ETF identification**: yfinance chart-endpoint `instrumentType` stored per
   symbol in `bronze_security` (`common.security`), on top of the benchmark
   list and the EDGAR non-operating SICs. Foreign ADRs stay call-eligible.

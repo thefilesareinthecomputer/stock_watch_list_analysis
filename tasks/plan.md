@@ -47,9 +47,15 @@ Specced in `tasks/SPEC-SIGNAL-TIERS.md`. 10b (registry) is done.
     close** - the first prospective round; earlier vintages are refused as
     backdated by `first_round_month` in the registry.
 
-12. Priority tier for held positions (`knowledge/positions.md`, account-
-    sectioned) -> verify: tier membership never leaks into a tracked file;
-    held names are hard-gated by the freshness check.
+12. Priority tier for held positions - **Built 2026-08-11.**
+    `common.positions` parses `knowledge/POSITIONS.md` (all caps; account-
+    sectioned, fractional quantities); `build_local.py` hard-gates every
+    tracked held name on freshness (stale -> build fails) and builds
+    warehouse-only `gold_held_positions` (accounts, quantity, tracked flag,
+    v2 rank, latest call). Held-but-untracked names surface as the
+    promotion-candidate list. Verified: 72 tracked + 1 unscored (VFIAX) on
+    real data; tier membership never touches a tracked file (fixture-only
+    tests). Held tier does NOT gate call emission - it is an overlay.
 
 13. **Line of sight - broad universe(s) ranked continuously.** Rule-based
     top-N by dollar volume, watchlist and held tier as tags on top -> verify:

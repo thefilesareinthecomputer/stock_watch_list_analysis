@@ -35,6 +35,9 @@ from backtest.returns import DECAY_HORIZONS, build_forward_returns  # noqa: E402
 from common.adjustments import adjusted_prices  # noqa: E402
 from common.fundamentals import build_fundamental_tables  # noqa: E402
 from common.indicators import build_signal_series  # noqa: E402
+from common.positions import (  # noqa: E402
+    build_held_table, check_held_freshness, held_symbols, load_positions,
+)
 from scoring.calls import CALLS_LOG, load_gold_calls  # noqa: E402
 from scoring.candidates import build_candidate_signals  # noqa: E402
 from scoring.components import percentile_sql  # noqa: E402
@@ -154,6 +157,17 @@ def main():
     # calls_log.jsonl survives a warehouse rebuild, this table does not.
     if os.path.exists(CALLS_LOG):
         print(f"gold_calls: {load_gold_calls(con)} rows from calls_log.jsonl")
+
+    # Held tier (task 12): private POSITIONS.md -> warehouse-only table.
+    # The freshness check is a hard gate - a stale held name fails the build.
+    positions = load_positions()
+    if positions:
+        tracked, untracked = check_held_freshness(con, held_symbols(positions))
+        build_held_table(con, positions)
+        print(f"gold_held_positions: {len(tracked)} tracked, "
+              f"{len(untracked)} held-unscored (promotion candidates)")
+        if untracked:
+            print(f"  held but untracked: {', '.join(untracked)}")
 
     rows, syms, lo, hi = con.execute(
         "SELECT COUNT(*), COUNT(DISTINCT symbol), MIN(as_of_date), "
