@@ -89,14 +89,19 @@ promotion yet: trial logging (9b) and the correlation gate do not exist.
 **L6 - buy/sell calls, tiering, and discovery**
 Specced in `tasks/SPEC-SIGNAL-TIERS.md`.
 
-10b. Signal tier registry - every signal is `scored`, `candidate` or
-    `monitored`, held as data so promotion is a recorded event -> verify: a
-    `candidate` provably contributes zero weight; promotion requires
-    walk-forward IC at t > 3.0 with the trial count logged; demotion is
-    automatic when a scored signal's IC turns insignificant.
-    Initial: the four incumbents `scored` (they are incumbents, not winners);
-    12-1 momentum, gross profitability, realized volatility, beta and earnings
-    yield `candidate`; RSI/MFI/MACD/Bollinger/OBV/ATR `monitored`.
+10b. **DONE 2026-08-11.** Registry at `src/scoring/signal_tiers.json`
+    (`scoring.tiers`): every signal tiered as data with evidence strings and
+    dated promote/demote events; the weight-zero test proves candidates
+    cannot move a v2 score. **Re-sorted on evidence, not the planned
+    initial assignment:** scored = 12-1 momentum + earnings yield (user
+    ruling, t 4.1/3.9 at 126, corr -0.07); all four incumbents demoted to
+    monitored on measured nothing; GP/A, 90d momentum, ROE, realized vol and
+    beta are candidates. Local v2 composite (`gold_watchlist_ranked_v2`)
+    reads the registry; production v1 untouched until L5.
+    Decay validated on the 21..252 monthly ladder: v2 IC rises from 0.030
+    (1mo) to a 0.062 plateau at 7-12 months, t up to 7.0 - predictions do
+    not decay within a year; 126 stands as the window, with 7-8 months
+    marginally better. Recorded in `results/decay/`.
 
 11. Emit a buy/sell call per symbol, defined as "outperforms the benchmark over
     the forecast window" -> verify: on held-out history the buy set beats the
@@ -177,6 +182,16 @@ Specced in `tasks/SPEC-SIGNAL-TIERS.md`.
    `scoring.candidates` nulls earnings yield when the share count is older
    than 400 days. Stale would otherwise score as an E/P off by orders of
    magnitude.
+
+0d. **Metrics are security-type- and industry-conditional; build around it.**
+   Commodity trusts (SLV, SIC 6221) file 10-Ks whose "net income" is metal
+   appreciation - SLV ranked #2 in v2 before the guard, and it even reports
+   a Revenues tag, so only the SIC code discriminates. `bronze_entity` now
+   stores SIC per symbol (EDGAR submissions endpoint) and earnings-based
+   ratios go neutral for `NON_OPERATING_SIC` vehicles. Related, still open:
+   GP/A is undefined for financials (no cost-of-revenue) and value/quality
+   ranked cross-universe are structural sector bets - sector-relative
+   ranking (SIC is already on hand) is the flagged fix, decide before P4.
 
 1. **Never raise numpy above 1.x in `databricks.yml`.** Serverless
    `environment_version: "3"` ships `pyarrow==15.0.2`, which requires

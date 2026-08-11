@@ -19,6 +19,9 @@ DuckDB-only by design: local computes, Databricks serves (SPEC.md).
 """
 
 HORIZONS = (21, 63, 126, 252)  # 126 is the provisional forecast window
+# The decay ladder: every month out to a year, one rung per ~21 sessions.
+# Supersets HORIZONS, so one build serves both reporting and decay curves.
+DECAY_HORIZONS = tuple(21 * k for k in range(1, 13))
 BENCHMARK = "SPY"
 
 

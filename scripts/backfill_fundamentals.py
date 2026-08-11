@@ -26,8 +26,8 @@ import requests  # noqa: E402
 
 from common.config import TICKERS  # noqa: E402
 from common.edgar import (  # noqa: E402
-    extract_facts, fetch_companyfacts, resolve_cik_fallback, resolve_ciks,
-    upsert_facts, user_agent,
+    extract_facts, fetch_companyfacts, fetch_entity, resolve_cik_fallback,
+    resolve_ciks, upsert_entity, upsert_facts, user_agent,
 )
 from common.run_context import new_run_id, now_ts  # noqa: E402
 
@@ -59,6 +59,9 @@ def main():
     total, empty = 0, []
 
     for i, symbol in enumerate(resolved, 1):
+        entity = fetch_entity(session, ciks[symbol])
+        if entity:
+            upsert_entity(con, symbol, ciks[symbol], entity, ingest_ts)
         payload = fetch_companyfacts(session, ciks[symbol])
         if payload is None:
             empty.append(symbol)

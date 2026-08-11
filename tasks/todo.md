@@ -49,9 +49,17 @@ plan.md L4 for the first comparison - the EDGAR candidates beat the
 incumbent composite on every metric with 15x less turnover, survivorship
 caveat standing.
 
-**START WITH task 10b - the signal tier registry**, which promotion
-decisions read from; then L5 (task 10, promote a winning variant to
-Databricks behind a METHODOLOGY_VERSION bump).
+**Task 10b is DONE (2026-08-11): the registry exists and the re-sort is
+recorded.** Scored = 12-1 momentum + earnings yield (methodology v2, local);
+incumbents demoted on evidence; decay validated on the 1-12 month ladder
+(plateau at 7-12mo, no decay within a year); SIC entity guard keeps
+commodity trusts out of earnings ratios. Trials logged: 31.
+
+**START WITH task 11 - buy/sell calls with hysteresis**, now ungated (tasks
+4-7 exist and v2 has walk-forward evidence). Then L5 (ship v2 tables to
+Databricks - blocked on candidate data not existing there) and task 12/13.
+Sector-relative ranking for value/quality is the next candidate-quality fix
+(SIC codes already stored).
 
 ```bash
 uv run pytest tests/ -q                # 232 passing

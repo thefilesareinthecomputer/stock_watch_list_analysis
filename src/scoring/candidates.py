@@ -51,6 +51,9 @@ def _rank_ctes():
 
 def build_candidate_signals(con):
     """Build gold_candidate_signals from prices, signals and fundamentals."""
+    from common.edgar import ENTITY_SCHEMA, NON_OPERATING_SIC
+    con.execute(ENTITY_SCHEMA)  # tolerate a warehouse without the entity pass
+    non_operating = ", ".join(f"'{sic}'" for sic in NON_OPERATING_SIC)
     ctes, joins = _rank_ctes()
     con.execute(f"""
         CREATE OR REPLACE TABLE gold_candidate_signals AS
@@ -64,12 +67,14 @@ def build_candidate_signals(con):
         base AS (
             SELECT s.symbol, s.as_of_date, p.close, p.cum_split,
                    m.net_income, m.shares_outstanding, m.shares_date,
-                   m.filed, m.roe, m.gross_profitability
+                   m.filed, m.roe, m.gross_profitability, m.revenues,
+                   e.sic
             FROM (SELECT DISTINCT symbol, as_of_date FROM silver_signals) s
             JOIN prices p
               ON p.symbol = s.symbol AND p.date = s.as_of_date
             ASOF LEFT JOIN silver_fundamental_metrics m
               ON m.symbol = s.symbol AND m.filed <= s.as_of_date
+            LEFT JOIN bronze_entity e ON e.symbol = s.symbol
         ),
         shares_asof AS (
             SELECT b.*, sp.cum_split AS cum_split_at_shares
@@ -85,8 +90,19 @@ def build_candidate_signals(con):
             -- undimensioned count that can be years stale - paired with
             -- today's price that manufactures an E/P off by orders of
             -- magnitude. NULL scores neutral; garbage scores wrong.
-            SELECT symbol, as_of_date, filed, roe, gross_profitability,
+            -- Operating-company guard, two layers. SIC: commodity trusts
+            -- (SLV) and investment vehicles file 10-Ks whose "net income"
+            -- is asset appreciation - fictional earnings yields that
+            -- outrank every real company (SLV ranked #2 before this).
+            -- Revenue marker: a belt for entities whose SIC is missing.
+            -- Excluded entities score neutral on earnings-based ratios.
+            SELECT symbol, as_of_date, filed, gross_profitability,
+                CASE WHEN revenues IS NOT NULL
+                     AND COALESCE(sic, '') NOT IN ({non_operating})
+                     THEN roe END AS roe,
                 CASE WHEN shares_outstanding > 0 AND close > 0
+                     AND revenues IS NOT NULL
+                     AND COALESCE(sic, '') NOT IN ({non_operating})
                      AND shares_date >= as_of_date - INTERVAL 400 DAY
                      THEN net_income /
                           (close * shares_outstanding

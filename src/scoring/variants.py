@@ -66,18 +66,11 @@ def definition_hash(variant):
     return hashlib.sha256(canonical.encode()).hexdigest()
 
 
-def score_table(con, variant, horizon, table_name="variant_scores_tmp",
-                benchmark="SPY"):
-    """Materialize (symbol, as_of_date, score) for one variant, one horizon.
-
-    Returns table_name; pass it to backtest.harness.evaluation_frame.
-    """
-    validate_variant(variant)
-    if not _IDENT.match(table_name):
-        raise ValueError(f"invalid table name: {table_name}")
-    comps = variant["components"]
-    total_weight = sum(c["weight"] for c in comps)
-
+def component_sql(comps):
+    """The shared ranking discipline: value exprs, per-component non-null
+    PERCENT_RANK CTEs, their joins, and the neutral-on-missing weighted sum.
+    Used by both variant scoring and the registry's composite so the
+    definition exists once."""
     val_exprs = ",\n                   ".join(
         f"({c['expression']}) AS comp_{i}" for i, c in enumerate(comps))
     rank_ctes = ",".join(f"""
@@ -94,6 +87,22 @@ def score_table(con, variant, horizon, table_name="variant_scores_tmp",
         for i in range(len(comps)))
     weighted = " + ".join(
         f"COALESCE(pct_{i}, 0.5) * {c['weight']}" for i, c in enumerate(comps))
+    total_weight = sum(c["weight"] for c in comps)
+    return val_exprs, rank_ctes, rank_joins, weighted, total_weight
+
+
+def score_table(con, variant, horizon, table_name="variant_scores_tmp",
+                benchmark="SPY"):
+    """Materialize (symbol, as_of_date, score) for one variant, one horizon.
+
+    Returns table_name; pass it to backtest.harness.evaluation_frame.
+    """
+    validate_variant(variant)
+    if not _IDENT.match(table_name):
+        raise ValueError(f"invalid table name: {table_name}")
+    comps = variant["components"]
+    val_exprs, rank_ctes, rank_joins, weighted, total_weight = \
+        component_sql(comps)
     candidate_cols = ", ".join(f"c.{col}" for col in CANDIDATE_COLUMNS)
 
     con.execute(f"""

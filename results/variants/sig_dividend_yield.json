@@ -1,0 +1,80 @@
+{
+  "data": {
+    "max_as_of_date": "2026-08-10",
+    "silver_signal_rows": 1125563,
+    "symbols": 324
+  },
+  "definition": {
+    "components": [
+      {
+        "ascending": true,
+        "expression": "dividend_yield",
+        "name": "dy",
+        "weight": 1.0
+      }
+    ],
+    "intent": "tier sweep: dividend yield, higher-is-better",
+    "name": "sig_dividend_yield"
+  },
+  "definition_hash": "f41cb8ac37448e1052c625a2c169888d0083004d3593071c6257fcb19c068b22",
+  "metrics": {
+    "126": {
+      "decile_means": {
+        "0": 0.07846,
+        "1": 0.07626,
+        "2": 0.04862,
+        "3": 0.06971,
+        "4": 0.04331,
+        "5": 0.08825,
+        "6": 0.11385,
+        "7": 0.07152,
+        "8": 0.04832,
+        "9": 0.01979
+      },
+      "excess_vs_equal_weight_gross": -0.04593355341179705,
+      "excess_vs_equal_weight_net": -0.04793355341179706,
+      "hit_rate": 0.44495064540622625,
+      "ic": {
+        "by_year": {},
+        "mean": NaN,
+        "n_dates": 0,
+        "t_stat": NaN
+      },
+      "monotonicity": -0.35757575757575755,
+      "turnover": 0.002921447315044367
+    },
+    "21": {
+      "decile_means": {
+        "0": 0.01188,
+        "1": 0.01218,
+        "2": 0.00866,
+        "3": 0.0127,
+        "4": 0.00712,
+        "5": 0.01069,
+        "6": 0.01756,
+        "7": 0.00925,
+        "8": 0.0065,
+        "9": 0.00301
+      },
+      "excess_vs_equal_weight_gross": -0.006950533204648563,
+      "excess_vs_equal_weight_net": -0.008950533204648562,
+      "hit_rate": 0.4691698877231732,
+      "ic": {
+        "by_year": {},
+        "mean": NaN,
+        "n_dates": 0,
+        "t_stat": NaN
+      },
+      "monotonicity": -0.5151515151515151,
+      "turnover": 0.0028441603490379024
+    }
+  },
+  "settings": {
+    "cost_bps": 10.0,
+    "eval_dates": "monthly",
+    "horizons": [
+      21,
+      126
+    ]
+  }
+}

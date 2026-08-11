@@ -22,6 +22,14 @@ import pandas as pd
 
 TICKER_CIK_URL = "https://www.sec.gov/files/company_tickers.json"
 BROWSE_EDGAR_URL = "https://www.sec.gov/cgi-bin/browse-edgar"
+SUBMISSIONS_URL = "https://data.sec.gov/submissions/CIK{cik}.json"
+
+# Non-operating investment vehicles by SIC: commodity trusts (6221),
+# investment offices (6726), blank checks (6770), investors NEC (6799).
+# They file 10-Ks whose "net income" is asset appreciation, so their
+# earnings-based ratios are fiction. Banks and insurers are NOT here -
+# their earnings are real.
+NON_OPERATING_SIC = ("6221", "6726", "6770", "6799")
 COMPANYFACTS_URL = "https://data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json"
 REQUEST_INTERVAL = 0.13  # seconds between requests; safely under 10/s
 
@@ -131,6 +139,39 @@ def fetch_companyfacts(session, cik):
     resp.raise_for_status()
     time.sleep(REQUEST_INTERVAL)
     return resp.json()
+
+
+def fetch_entity(session, cik):
+    """Entity classification from the submissions endpoint: SIC and name."""
+    resp = session.get(SUBMISSIONS_URL.format(cik=cik), timeout=30)
+    time.sleep(REQUEST_INTERVAL)
+    if resp.status_code == 404:
+        return None
+    resp.raise_for_status()
+    data = resp.json()
+    return {"sic": str(data.get("sic") or ""),
+            "sic_description": data.get("sicDescription") or "",
+            "entity_name": data.get("name") or ""}
+
+
+ENTITY_SCHEMA = """
+    CREATE TABLE IF NOT EXISTS bronze_entity (
+        symbol VARCHAR,
+        cik VARCHAR,
+        sic VARCHAR,
+        sic_description VARCHAR,
+        entity_name VARCHAR,
+        _ingest_ts VARCHAR
+    )
+"""
+
+
+def upsert_entity(con, symbol, cik, entity, ingest_ts):
+    con.execute(ENTITY_SCHEMA)
+    con.execute("DELETE FROM bronze_entity WHERE symbol = ?", [symbol])
+    con.execute("INSERT INTO bronze_entity VALUES (?, ?, ?, ?, ?, ?)",
+                [symbol, cik, entity["sic"], entity["sic_description"],
+                 entity["entity_name"], ingest_ts])
 
 
 def extract_facts(symbol, cik, payload):

@@ -40,6 +40,7 @@ uv run python scripts/backfill.py        # yfinance -> warehouse/market.duckdb (
 uv run python scripts/backfill_fundamentals.py  # SEC EDGAR -> bronze_fundamentals (~3 min)
 uv run python scripts/build_local.py     # local silver + gold + forward returns (~3 min)
 uv run python scripts/evaluate.py --candidates  # walk-forward verdict on candidate signals
+uv run python scripts/ic_decay.py        # IC by 1-12 month horizon for the registry's signals
 uv run pytest tests/test_engine_parity.py -q   # same SQL, both engines
 ```
 EDGAR needs a contact User-Agent: `EDGAR_USER_AGENT` in `.env`, falling back to
@@ -104,6 +105,6 @@ to materialize `tickers.txt` for a manual deploy. Mirror the change to the `WATC
 
 ## Code size — track after major changes to prevent bloat
 ```bash
-find src   -name "*.py" -exec wc -l {} +   # ~5245 across 41 files
-find tests -name "*.py" -exec wc -l {} +   # ~4011 across 22 files
+find src   -name "*.py" -exec wc -l {} +   # ~5412 across 42 files
+find tests -name "*.py" -exec wc -l {} +   # ~4154 across 23 files
 ```

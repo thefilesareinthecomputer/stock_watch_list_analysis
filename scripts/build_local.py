@@ -31,12 +31,13 @@ sys.path.insert(0, os.path.join(ROOT, "src"))
 import duckdb  # noqa: E402
 import pandas as pd  # noqa: E402
 
-from backtest.returns import build_forward_returns  # noqa: E402
+from backtest.returns import DECAY_HORIZONS, build_forward_returns  # noqa: E402
 from common.adjustments import adjusted_prices  # noqa: E402
 from common.fundamentals import build_fundamental_tables  # noqa: E402
 from common.indicators import build_signal_series  # noqa: E402
 from scoring.candidates import build_candidate_signals  # noqa: E402
 from scoring.components import percentile_sql  # noqa: E402
+from scoring.tiers import load_registry, rank_latest  # noqa: E402
 
 WAREHOUSE = os.path.join(ROOT, "warehouse", "market.duckdb")
 
@@ -130,7 +131,7 @@ def main():
     con.execute("CREATE OR REPLACE TABLE silver_adjusted_prices AS "
                 "SELECT * FROM incoming_adjusted")
     con.unregister("incoming_adjusted")
-    build_forward_returns(con)
+    build_forward_returns(con, horizons=DECAY_HORIZONS)
 
     build_gold(con)
 
@@ -142,6 +143,8 @@ def main():
     if has_facts:
         build_fundamental_tables(con)
         build_candidate_signals(con)
+        # Registry-driven v2 composite (local only; production stays v1).
+        rank_latest(con, load_registry())
     else:
         print("no bronze_fundamentals - run scripts/backfill_fundamentals.py "
               "to build the candidate tier")

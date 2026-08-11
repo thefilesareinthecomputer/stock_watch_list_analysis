@@ -30,8 +30,11 @@ def _con():
         CREATE TABLE silver_fundamental_metrics (
             symbol VARCHAR, filed DATE, net_income DOUBLE,
             shares_outstanding DOUBLE, shares_date DATE,
-            roe DOUBLE, gross_profitability DOUBLE)
+            roe DOUBLE, gross_profitability DOUBLE, revenues DOUBLE)
     """)
+    con.execute("CREATE TABLE bronze_entity (symbol VARCHAR, cik VARCHAR, "
+                "sic VARCHAR, sic_description VARCHAR, entity_name VARCHAR, "
+                "_ingest_ts VARCHAR)")
     return con
 
 
@@ -45,10 +48,11 @@ def _signal(con, symbol, date=ASOF):
 
 
 def _metrics(con, symbol, filed, net_income=None, shares=None,
-             shares_date=None, roe=None, gp=None):
+             shares_date=None, roe=None, gp=None, revenues=1.0):
     con.execute("INSERT INTO silver_fundamental_metrics VALUES "
-                "(?, ?, ?, ?, ?, ?, ?)",
-                [symbol, filed, net_income, shares, shares_date, roe, gp])
+                "(?, ?, ?, ?, ?, ?, ?, ?)",
+                [symbol, filed, net_income, shares, shares_date, roe, gp,
+                 revenues])
 
 
 def _row(con, symbol, date=ASOF):
@@ -140,6 +144,42 @@ def test_fundamentals_filed_after_as_of_are_not_visible():
     after = _row(con, "S", ASOF)
     assert before["roe"] != before["roe"]  # filing not yet knowable
     assert after["roe"] == 0.2
+
+
+def test_non_operating_sic_scores_neutral_even_with_revenues():
+    # SLV reports a Revenues tag (silver sold to pay expenses), so the
+    # revenue marker alone missed it. SIC 6221 is the discriminator.
+    con = _con()
+    con.execute("INSERT INTO bronze_entity VALUES "
+                "('SLV', '1', '6221', 'Commodity Contracts', 'Trust', 't')")
+    _signal(con, "SLV")
+    _price(con, "SLV", "2024-02-01", 30.0)
+    _price(con, "SLV", ASOF, 30.0)
+    _metrics(con, "SLV", "2024-02-01", net_income=21e9, shares=5.8e8,
+             shares_date="2024-02-01", roe=4.0, revenues=3.1e9)
+    build_candidate_signals(con)
+
+    row = _row(con, "SLV")
+    assert row["earnings_yield"] != row["earnings_yield"]  # NULL
+    assert row["roe"] != row["roe"]  # NULL
+
+
+def test_trust_without_revenues_scores_neutral_on_earnings_ratios():
+    # A commodity trust files a 10-K whose net income is unrealized metal
+    # appreciation. No reported revenue -> not an operating company -> its
+    # E/P and ROE are NULL, never a rank-topping fiction (SLV ranked #3
+    # before this guard).
+    con = _con()
+    _signal(con, "TRUST")
+    _price(con, "TRUST", "2024-02-01", 30.0)
+    _price(con, "TRUST", ASOF, 30.0)
+    _metrics(con, "TRUST", "2024-02-01", net_income=5000.0, shares=100.0,
+             shares_date="2024-02-01", roe=0.9, revenues=None)
+    build_candidate_signals(con)
+
+    row = _row(con, "TRUST")
+    assert row["earnings_yield"] != row["earnings_yield"]  # NULL
+    assert row["roe"] != row["roe"]  # NULL
 
 
 def test_symbol_with_no_filings_ever_still_appears():
