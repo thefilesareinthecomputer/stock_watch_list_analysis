@@ -20,6 +20,8 @@ app_generated_files/
 # Local DuckDB warehouse — regenerable from scripts/backfill.py, and holds the
 # private watchlist's data
 warehouse/
+# Research and knowledge base — private, and does not travel between devices
+knowledge/
 .pytest_cache/
 notes/
 __archive/
