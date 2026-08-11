@@ -171,6 +171,19 @@ overfitting more often than of edge.
 A call is emitted per symbol per run into the append-only snapshot, carrying the
 signals and tier configuration that produced it.
 
+**Frozen expectations and the post-mortem loop** (ruled 2026-08-11). Every
+emitted call also carries the decayed walk-forward expectation it will be graded
+against. Before each rebalance round, a post-mortem settles every gradeable
+vintage - realized vs frozen expectation per horizon rung, per-signal
+attribution - and, where cumulative drift warrants it, emits SUGGESTED registry
+events with the evidence attached. Measurement is automated; the decision is
+human-ratified: accepting a suggestion means recording the dated event and
+bumping the methodology version. Single-interval misses are labeled noise
+(1-month fold-level t is 1.9); only cumulative drift across vintages triggers a
+suggestion, and "nothing to learn yet" is the expected output most rounds. Each
+post-mortem writes an immutable dated report, so suggestions and the rulings on
+them accumulate as a queryable record.
+
 **Gated.** No call is emitted before walk-forward validation exists. A buy label
 attached to the current ranking is the current ranking with a new name, and that
 ranking was inverted until 2026-08-10 and has never been shown to predict

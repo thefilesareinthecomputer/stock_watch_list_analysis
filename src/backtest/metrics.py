@@ -38,7 +38,13 @@ def ic_by_date(df):
 
 
 def ic_summary(ics):
-    """Mean, t-stat and per-year means for a per-date IC series."""
+    """Mean, t-stat and per-year means for a per-date IC series.
+
+    The t-stat assumes independent dates. Monthly evaluation dates with a
+    multi-month forecast window OVERLAP, inflating t by roughly the square
+    root of the windows-per-horizon; judge long horizons on fold-level t
+    across the yearly means, not on this number.
+    """
     n = len(ics)
     if n == 0:
         return {"mean": np.nan, "t_stat": np.nan, "n_dates": 0, "by_year": {}}

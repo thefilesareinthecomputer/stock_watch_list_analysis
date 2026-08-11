@@ -157,12 +157,14 @@ no claim about the market. Any presentation implying otherwise is wrong.
 
 ### 5.4 Required additions
 
-Status as of 2026-08-10. Listed here because their absence blocks the stated
+Status as of 2026-08-11. Listed here because their absence blocks the stated
 goal; build status is tracked in the phase specs, not asserted here long-term.
 
-- **`gold.recommendations`** - append-only, one row per symbol per run:
-  score, rank, every component, the price used, and a `methodology_version`.
-  Never rewritten. This is the record everything downstream depends on (P1, P5).
+- **`gold.recommendations`** - shipped 2026-08-10: append-only, one row per
+  symbol per run, first-write-wins per (`as_of_date`, `methodology_version`).
+  Never rewritten. The record everything downstream depends on (P1, P5). The
+  local methodology-v2 ranking does not yet have its append-only counterpart;
+  that lands with the buy/sell calls (plan task 11).
 - **`gold.universe_membership`** - symbol, `added_date`, `removed_date`,
   `removal_reason`, successor symbol. Sourced from `ticker_migrations.json` (P3).
 - **`gold.data_quality`** - per run per source: expected vs received symbol

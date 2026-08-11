@@ -5,137 +5,60 @@ to state + next action + pointer. Full records: `tasks/completed/`.
 
 ## Start here - next session
 
-**Goal: turn the POC into a real recommendation engine, local-first.**
+**Goal: every symbol gets a trustworthy buy or sell call at pipeline runtime.**
+A buy means "most likely to outperform the benchmark over 126 sessions" - a
+relative claim; below the index is failure.
 
-Read in this order: `tasks/SPEC-LOCAL-WAREHOUSE.md` (what and why),
-`tasks/plan.md` (the ordered tasks), `SPEC.md` (invariants that must hold).
+Read in this order: `tasks/plan.md` (ordered tasks + gotchas), `SPEC.md`
+(invariants), `tasks/SPEC-SIGNAL-TIERS.md` (tiers and calls).
 
-### The goal
+**State: the measurement layer is complete and the re-sort is done.** Local
+warehouse builds bronze -> silver -> gold incl. EDGAR candidates (~3 min);
+evaluation harness with known-answer/look-ahead checks; trial log (32);
+variants as recorded reproducible config; tier registry with methodology v2
+(scored = 12-1 momentum + earnings yield, incumbents demoted on evidence);
+decay validated 1-12 months with overlap-corrected significance. 303 tests.
+All synced to develop and main at `bf908e0` + doc follow-ups.
 
-**Every symbol on the list gets a buy or sell call at pipeline runtime, and the
-call is trustworthy.**
-
-A **buy** means: this will most likely outperform the benchmark over roughly the
-next 6 months. That is the definition to build toward - it is deliberately a
-*relative* claim, matching the settled objective in
-`tasks/SPEC-RECOMMENDATION-ENGINE.md` (below the index is failure).
-
-How that probability is actually calculated, and whether 6 months is the right
-window, are **open and decided next session**. Do not assume the current
-four-component composite is the answer; it is a placeholder whose components are
-three correlated oscillators plus a broken value metric (parent spec P4).
-
-### Sequence
-
-L1 and L2 are done - the local pipeline runs bronze -> silver -> gold, 1.13M
-signal rows, ~2 minutes.
-
-**Tasks 4-7 are DONE (2026-08-11): the evaluation harness exists.**
-`src/backtest/` + `scripts/evaluate.py`; known-answer and look-ahead checks
-pass against 16 years of history. See plan.md L3 for the first read on the
-candidates (earnings yield promising, GP/A mixed, ROE weak, 30d momentum
-worthless at its own horizon).
-
-**Task 9b is DONE (2026-08-11): the trial log exists** (`backtest.trials`,
-tracked `trial_log.jsonl`, wired into `evaluate.py`), and an end-to-end chain
-test (`tests/test_e2e_local.py`) walks bronze -> signals -> gold composite ->
-fundamentals -> candidates -> forward returns -> verdict -> trial log on
-synthetic data. 287 tests.
-
-**Tasks 8+9 are DONE (2026-08-11): variants as config entries** (decision:
-not SQL fragments), compared from one command, results recorded with their
-methodology hash, byte-reproducible, every run trial-logged (count: 7). See
-plan.md L4 for the first comparison - the EDGAR candidates beat the
-incumbent composite on every metric with 15x less turnover, survivorship
-caveat standing.
-
-**Task 10b is DONE (2026-08-11): the registry exists and the re-sort is
-recorded.** Scored = 12-1 momentum + earnings yield (methodology v2, local);
-incumbents demoted on evidence; decay validated on the 1-12 month ladder
-(plateau at 7-12mo, no decay within a year); SIC entity guard keeps
-commodity trusts out of earnings ratios. Trials logged: 31.
-
-**START WITH task 11 - buy/sell calls with hysteresis**, now ungated (tasks
-4-7 exist and v2 has walk-forward evidence). Then L5 (ship v2 tables to
-Databricks - blocked on candidate data not existing there) and task 12/13.
-Sector-relative ranking for value/quality is the next candidate-quality fix
-(SIC codes already stored).
+**START WITH task 11** - buy/sell calls per the ruled design (frozen
+expectations, hysteresis, append-only v2 snapshot, human-ratified per-rebalance
+post-mortem). Full design: plan.md task 11 and
+`completed/plan-completed-2026-08-11.md`. This also starts the paper clock,
+which is the only path to go-live evidence.
 
 ```bash
-uv run pytest tests/ -q                # 232 passing
-uv run python scripts/build_local.py   # rebuild local silver + gold, ~2 min
+uv run pytest tests/ -q                     # 303 passing
+uv run python scripts/build_local.py        # full local rebuild, ~3 min
+uv run python scripts/evaluate.py --candidates
+uv run python scripts/ic_decay.py           # IC by 1-12 month horizon
 ```
 
-If `warehouse/` is missing (gitignored, so it does not travel between devices):
-`uv run python scripts/backfill.py` first - about 2 minutes for full history.
+If `warehouse/` is missing (gitignored): `scripts/backfill.py` then
+`scripts/backfill_fundamentals.py` first (~5 min total).
 
-### Established 2026-08-10, spec at `tasks/SPEC-SIGNAL-TIERS.md`
+## Needed from the user
 
-- **Validation holds out TIME, not symbols.** Stocks co-move, so a held-out set
-  of tickers mostly measures the market. Score as of a past date using only what
-  was knowable then, measure realized excess, roll forward.
-- **Signals are tiered, never deleted.** `scored` (in the composite),
-  `candidate` (computed and evaluated, weight zero), `monitored` (stored only).
-  A deleted signal stops accumulating evidence, so the decision to drop it can
-  never be revisited on data.
-- **The four current components are incumbents, not winners.** None earned its
-  tier on evidence. 12-1 momentum, gross profitability and realized volatility
-  enter as candidates with better priors.
-- **Trial counts are logged before results are seen.** Cannot be retrofitted.
-- Held positions live in `knowledge/positions.md` (gitignored via
-  `knowledge/`), sectioned by account - delivered 2026-08-10, keep the format.
-
-### Resolved 2026-08-11
-
-- **Forecast window: 126 sessions (~6 months), provisional.** Final choice
-  comes from task 6's IC-by-horizon decay report. 126 added to the task 4
-  horizons so the window is a measured one.
-- **EDGAR CompanyFacts ingested end to end** - see plan.md shipped record and
-  gotcha 0c (CIK fallback, XOM holdco gap, stale-shares guard).
-
-### Needed from the user next session
-
-- **Which broad universe(s) to keep in view** - one large-cap tier, or several.
-  Line of sight (task 13) and promotion into tracking (task 14) are both wanted
-  and are separate mechanisms.
-- **A ruling on XOM's predecessor CIK** - merge the old operating company's
-  filing history under the new holdco ticker, or accept neutral fundamentals
-  until the holdco's first 10-K.
-
-## State as of 2026-08-10
-
-`develop` and `main` aligned, CI green. Watchlist is 324 symbols, all resolving.
-
-Shipped today: score inversion fixed (all four components were reversed), an
-append-only `gold.recommendations` snapshot, a tiered freshness gate, the
-engine-parity harness, and the local backfill.
+- **Before task 13:** which broad universe(s) - one large-cap tier or several.
+- **XOM predecessor-CIK ruling** (plan.md gotcha 0c).
+- **Stale branch:** `feature/upgrade-stock-pipeline` on origin, superseded -
+  delete or keep.
 
 ## Open
 
-1. **No evaluation yet.** The local warehouse builds bronze through gold,
-   including the EDGAR candidate tier, but nothing measures whether any
-   ranking predicts returns. That is L3, and it gates everything downstream.
-
-2. **Three decisions the work will reach.** Cost model (flat bps vs
-   spread-aware) before task 6; how a variant is expressed (config vs SQL
-   fragment) before task 8; sector-neutral ranking before the parent spec's P4.
-
-3. **Backtest results cannot set a go-live threshold.** Survivorship (the
-   universe is today's survivors) biases the levels; fundamentals history now
-   reaches back to 2009 via EDGAR, which narrows but does not remove the
-   caveat. The harness is a mechanics check and variant comparator; real
-   evidence comes from the forward paper track.
-
-4. **`feature/upgrade-stock-pipeline` still on origin** at `bd0694f`, fully
-   superseded. Delete or keep - needs a ruling.
-
-5. **`setup-uv` pinned to exact `v9.0.0`**, so it will not pick up patches.
+1. **L5 blocked by design:** v2 cannot deploy to Databricks until candidate
+   data ships there as load-and-serve tables (EDGAR is local-only today).
+2. **Sector-relative ranking** for value/quality is the flagged candidate-
+   quality fix (SIC stored; GP/A's broken top decile is the motivating case).
+   Decide before parent-spec P4.
+3. **Go-live remains process-gated:** months of immutable paper track, capped
+   allocation, pre-committed abandonment rule - never a backtest threshold.
+   In-sample skill decays 26-58% out of sample; plan accordingly.
+4. **`setup-uv` pinned to exact `v9.0.0`** - will not pick up patches.
 
 ## Deferred, not blocking
 
-- Sharadar (paid) is the only clean fix for delisted price history; deferred
-  until backtest levels matter, which per item 3 is not yet.
-- Congressional trades stay display-only. Lowest-trust source.
-- FRED, Fama-French, congressional and yfinance fundamentals stay on Databricks
-  and are deliberately not ported - they never touch a rank. EDGAR fundamentals
-  are the local, PIT-clean replacement path (candidate tier today).
+- Sharadar (paid) for delisted history - only when backtest levels matter.
+- Congressional trades stay display-only; FRED/Fama-French stay on Databricks
+  as context/attribution - none of them touch a rank.
+- Theme/cohort aggregation rejected 2026-08-11: ticker-level, objective data
+  only.

@@ -5,227 +5,152 @@ Active plan and live gotchas only. Finished work lives in `tasks/completed/`.
 ## Active
 
 **Recommendation engine rebuild.** Architecture `SPEC.md`; programme
-`tasks/SPEC-RECOMMENDATION-ENGINE.md`; current phase
-`tasks/SPEC-LOCAL-WAREHOUSE.md`.
+`tasks/SPEC-RECOMMENDATION-ENGINE.md`; phase specs `tasks/SPEC-LOCAL-WAREHOUSE.md`
+(L1-L4 done, L5 open) and `tasks/SPEC-SIGNAL-TIERS.md`.
 
-Shipped 2026-08-10 - full record in `completed/plan-completed-2026-08-10.md`:
+Shipped 2026-08-10 - record in `completed/plan-completed-2026-08-10.md`:
 P0 (score inversion, immutable snapshot, freshness gate), watchlist merged to
-324, engine parity harness, and L1+L2 of the local warehouse (1.19M raw price
-rows and 1.13M signal rows, built locally in ~2 min against ~18 on Databricks).
+324, engine parity harness, L1+L2 of the local warehouse.
 
-Shipped 2026-08-11: EDGAR CompanyFacts end to end. `scripts/
-backfill_fundamentals.py` -> `bronze_fundamentals` (268K as-filed facts, 263
-symbols, 2009+); `common.fundamentals` -> `silver_fundamental_metrics` (PIT
-knowledge series keyed on `filed`, restatement-aware, amendment-safe);
-`scoring.candidates` -> `gold_candidate_signals` (E/P, gross profitability,
-ROE at every (symbol, as_of_date), percentile-ranked over non-nulls, zero
-composite weight). Wired into `build_local.py`. 260 tests.
+Shipped 2026-08-11 - record in `completed/plan-completed-2026-08-11.md`:
+EDGAR fundamentals end to end (bronze facts -> PIT silver -> candidate
+signals); L3 evaluation harness (tasks 4-7, all trust checks green); trial log
+(9b, tracked `trial_log.jsonl`, count 32); L4 variants as data (tasks 8-9,
+reproducible recorded results); 10b tier registry with the evidence-based
+re-sort (scored = 12-1 momentum + earnings yield; incumbents demoted);
+decay validated on the 21..252 monthly ladder with overlap-corrected
+significance; SIC entity guard (commodity trusts out of earnings ratios).
+Commits `7195ab1`, `14fe8ec`, `bf908e0`.
 
 ### Ordered tasks
-
-Dependencies: L3 -> L4 -> L5. Within L3, 6 and 7 are independent once 5 lands.
-
-### Target state
-
-Every symbol carries a **buy or sell call** at pipeline runtime, where buy means
-"most likely to outperform the benchmark over ~6 months". Relative by
-definition, matching the settled objective. The calculation and the window are
-open - decide before task 11, not during it.
-
-**Sequencing constraint:** tasks 4-7 gate task 11. A buy label emitted before
-forward returns can be measured is the current ranking with a new name on it,
-and the current ranking has never been shown to predict anything.
-
-**L3 - evaluation harness** - **DONE 2026-08-11.** `src/backtest/`
-(returns, costs, metrics, harness) + `scripts/evaluate.py`. All four verify
-gates hold: hand-computed return matches to 6dp; zero-cost exceeds costed by
-exactly the modelled bps; a synthetic perfect predictor scores IC 1.0 with
-monotonic deciles; the benchmark yields exactly zero excess, a seeded random
-signal finds no edge in 16 years, and a shifted leak collapses. Cost model
-decision: flat 10 bps/side (spread-aware rejected at this horizon). Monthly
-eval dates - daily would overlap the forecast windows and fake the t-stat.
-
-First harness read (survivorship caveat applies, levels inflated): earnings
-yield IC 0.033 at 126 sessions (t 3.9), stronger at 252 (t 5.6), turnover
-0.08; gross profitability positive IC but negative top-decile excess (works
-mid-rank, not as a decile-10 bet); ROE weak (t < 2.3, matches Novy-Marx);
-incumbent 30d momentum scores nothing at its own horizon (t 0.5). No
-promotion yet: trial logging (9b) and the correlation gate do not exist.
-
-**L4 - variant comparison** - **DONE 2026-08-11.**
-
-8. **DONE.** Variants are config entries (`src/scoring/variants.json` +
-   `scoring.variants`), not SQL fragments: named components with a
-   constrained scalar expression, direction flag and weight; validation
-   rejects statement separators. `scripts/compare_variants.py` runs them all
-   from one command. Per-date percentiles over non-nulls, missing scores
-   neutral - same discipline as production.
-9. **DONE.** Results land in `results/variants/<name>.json` carrying the
-   full definition, its sha256, settings and a data fingerprint; re-running
-   an unchanged variant reproduces the file byte for byte (tested). Every
-   variant run logs a trial first.
-
-   First comparison (185 monthly dates, horizon 126): `candidates_equal`
-   (three EDGAR fundamentals, equal weight) scores IC 0.035 at t 5.3 with
-   0.06 turnover; the incumbent-as-variant scores IC 0.016 at t 1.7 with
-   0.89 turnover. Survivorship inflates fundamentals persistence on a
-   survivor universe, so this ranks variants, not proves edge.
-9b. **DONE 2026-08-11.** Trial log ships as `backtest.trials` writing the
-   tracked, append-only `trial_log.jsonl` at the repo root - deliberately not
-   in the regenerable `warehouse/`. Logged BEFORE any result exists (the
-   schema has no result field); `evaluate.py` logs every run, re-runs
-   over-count on purpose (conservative), no opt-out flag. The four
-   evaluations run before the log existed are retro-logged with an intent
-   saying exactly that. Rationale stands: without the count the best of N is
-   indistinguishable from the luckiest of N (Bailey & Lopez de Prado 2014);
-   accept a factor at t > 3.0, not 2.0 (Harvey, Liu & Zhu 2016).
 
 **L5 - promote**
 
 10. Winning variant to Databricks -> verify: parity test green, `bundle
     validate` OK, CI deploy green, `METHODOLOGY_VERSION` bumped so past
-    snapshots are not restated.
+    snapshots are not restated. **Blocked:** methodology v2 needs candidate
+    data (EDGAR) on Databricks; ship as load-and-serve tables, not a port.
 
 **L6 - buy/sell calls, tiering, and discovery**
-Specced in `tasks/SPEC-SIGNAL-TIERS.md`.
+Specced in `tasks/SPEC-SIGNAL-TIERS.md`. 10b (registry) is done.
 
-10b. **DONE 2026-08-11.** Registry at `src/scoring/signal_tiers.json`
-    (`scoring.tiers`): every signal tiered as data with evidence strings and
-    dated promote/demote events; the weight-zero test proves candidates
-    cannot move a v2 score. **Re-sorted on evidence, not the planned
-    initial assignment:** scored = 12-1 momentum + earnings yield (user
-    ruling, t 4.1/3.9 at 126, corr -0.07); all four incumbents demoted to
-    monitored on measured nothing; GP/A, 90d momentum, ROE, realized vol and
-    beta are candidates. Local v2 composite (`gold_watchlist_ranked_v2`)
-    reads the registry; production v1 untouched until L5.
-    Decay validated on the 21..252 monthly ladder: v2 IC rises from 0.030
-    (1mo) to a 0.062 plateau at 7-12 months, t up to 7.0 - predictions do
-    not decay within a year; 126 stands as the window, with 7-8 months
-    marginally better. Recorded in `results/decay/`.
+11. **Buy/sell calls with frozen expectations and a human-ratified
+    post-mortem** (design ruled 2026-08-11, record in
+    `completed/plan-completed-2026-08-11.md`):
+    - Append-only local snapshot of v2 calls (currently overwrite-on-rebuild;
+      must be immutable before the paper clock starts).
+    - Every call carries the decayed walk-forward expectation it will be
+      graded against.
+    - Hysteresis (enter top decile, exit below median), not bare thresholds.
+    - Per-rebalance post-mortem: settle every gradeable vintage against its
+      frozen expectation, per-signal attribution, SUGGESTED registry events
+      with evidence attached - measurement automated, decisions human-ratified.
+      Single-interval misses labeled noise; only cumulative drift triggers
+      suggestions. Immutable dated report per round.
+    -> verify: on held-out history the buy set beats the sell set on forward
+    excess; the known-answer test still returns ~zero on the benchmark; a
+    snapshot diff across runs shows append-only; a post-mortem on a synthetic
+    drifting vintage emits a demotion suggestion and a healthy one emits none.
 
-11. Emit a buy/sell call per symbol, defined as "outperforms the benchmark over
-    the forecast window" -> verify: on held-out history the buy set beats the
-    sell set on forward excess return, and the harness's known-answer test still
-    returns ~zero on the benchmark. **Gated by tasks 4-7.**
-12. Priority tier for held positions - a subset of the watchlist tracked more
-    closely, sourced from private config like the watchlist itself -> verify:
-    tier membership never leaks into a tracked file; held names are hard-gated
-    by the freshness check (they already are, via `RECOMMENDED_DEPTH`).
-13. **Line of sight - broad universe(s) ranked continuously.** One or more
-    universes beyond the watchlist (rule-based top-N by dollar volume; possibly
-    several tiers, e.g. large-cap and small-cap) scored every run, with the
-    watchlist and held tier as *tags* on top rather than as the universe ->
-    verify: a symbol can be ranked without being tracked, and the watchlist's
-    position within the broader universe is queryable ("am I holding the
-    best-ranked names available, or just the ones I know?").
+12. Priority tier for held positions (`knowledge/positions.md`, account-
+    sectioned) -> verify: tier membership never leaks into a tracked file;
+    held names are hard-gated by the freshness check.
 
-    This is what breaks the feedback loop. Ranking only the watchlist can never
-    reveal that the whole watchlist is wrong.
+13. **Line of sight - broad universe(s) ranked continuously.** Rule-based
+    top-N by dollar volume, watchlist and held tier as tags on top -> verify:
+    a symbol can be ranked without being tracked; the watchlist's position
+    within the broader universe is queryable. Breaks the self-selection
+    feedback loop; also un-pollutes the low-vol measurement (gotcha 0d).
 
-14. **Promotion - expand the tracking list.** Candidates from task 13 that meet
-    the profitability criteria get promoted into tracking -> verify: promotion
-    is an explicit, recorded event (symbol, date, reason, universe of origin) so
-    the tracked set stays reconstructable at any past date; and demotion exists
-    too, or the list only ever grows.
-
-    Distinct from 13 on purpose: 13 is continuous visibility, 14 is a deliberate
-    act that changes what is tracked and eventually what is held.
+14. **Promotion - expand the tracking list.** Candidates from 13 meeting the
+    profitability criteria promoted as explicit recorded events (symbol, date,
+    reason, universe of origin), with a demotion path -> verify: the tracked
+    set is reconstructable at any past date.
 
 ### Decisions needed before the work reaches them
 
-- **Before task 8:** how a variant is expressed - config entry or SQL fragment?
-- **Before task 11:** how the outperformance probability is actually computed.
-  The current composite is a placeholder, not a candidate answer. The forecast
-  window is ruled (2026-08-11): 126 sessions (~6 months) provisionally, final
-  choice from task 6's IC-by-horizon decay report, per SPEC-SIGNAL-TIERS §2.
-- **Before task 13:** which broad universe(s), and how many tiers. One
-  (large-cap) is simplest; several give better context at more data cost.
-- **Before task 14:** what "meets my criteria for profitability" means as a
-  screen, expressed as rules over data we hold - and whether promotion is
-  automatic or proposed for approval.
-- **Before P4 of the parent spec:** rank value/quality within sector, or accept
-  the structural sector tilt deliberately.
+- **Before task 13:** which broad universe(s), and how many tiers.
+- **Before task 14:** the profitability screen as rules over data we hold;
+  promotion automatic or proposed-for-approval.
+- **Before P4 of the parent spec:** sector-relative ranking for value/quality
+  (SIC codes now stored in `bronze_entity`) or accept the structural sector
+  tilt deliberately. GP/A's broken top decile is the motivating case.
+- **XOM predecessor CIK:** merge the old operating company's history under the
+  holdco ticker, or accept neutral fundamentals until its first 10-K.
 
 ## Dev docs - live gotchas
 
 0. **`PERCENT_RANK` assigns 0.0 to the FIRST row in the ordering.** So
    `ORDER BY x DESC` gives the largest `x` the *lowest* percentile. All four
    score components shipped inverted on this, and every test passed. Component
-   directions now live once in `src/scoring/components.py`; never add one
-   without a direction test and a null fixture. Two advisors reasoned backwards
-   about this in opposite directions - settle ranking direction by executing
+   directions live once in `src/scoring/components.py` (v1) and per-component
+   direction flags in the registry/variants (v2); never add one without a
+   direction test and a null fixture. Settle ranking direction by executing
    the SQL, never by argument.
 
 0a. **DuckDB `ASOF JOIN` silently drops unmatched left rows.** Use
    `ASOF LEFT JOIN`. Point-in-time fundamentals joins are exactly where this
-   bites: a symbol with no filing before the as-of date vanishes from the
-   result instead of appearing with nulls, so the universe silently shrinks and
-   nothing fails. Same failure shape as a dead ticker contributing no rows.
-   Also: Databricks time-series feature tables permit exactly one timestamp
-   key, so any bitemporal collapse has to happen in silver.
-   Source: `knowledge/research/2026-08-10-oss-quant-stacks.md`.
+   bites: a symbol with no filing before the as-of date vanishes instead of
+   appearing with nulls. Databricks time-series feature tables permit exactly
+   one timestamp key, so any bitemporal collapse happens in silver.
 
-0b. **Dialect differences are found by running, not reading.** `CURRENT_TIMESTAMP()`
-   is a function in Spark and a bare keyword in DuckDB. Any SQL that must run in
-   both goes through `tests/test_engine_parity.py` first, and differences are
-   resolved to the common subset - an engine branch is two implementations again.
+0b. **Dialect differences are found by running, not reading.**
+   `CURRENT_TIMESTAMP()` is a function in Spark and a bare keyword in DuckDB.
+   Any SQL that must run in both goes through `tests/test_engine_parity.py`
+   first; differences resolve to the common subset - an engine branch is two
+   implementations again.
 
 0c. **EDGAR's ticker maps are incomplete and CIKs are not forever.**
-   `company_tickers.json` is missing real registrants (AEP was absent;
+   `company_tickers.json` is missing real registrants (AEP;
    `common.edgar.resolve_cik_fallback` resolves via browse-edgar). XOM's
-   ticker now points at a new holding-company CIK with one quarter of
-   history - the operating company's history lives under the old CIK, so XOM
-   has no silver fundamentals until the holdco's first 10-K (or a
-   predecessor-CIK merge, which needs a ruling). And multi-class filers
-   (BRK) report share counts as dimensioned facts CompanyFacts omits: the
-   undimensioned count can be years stale, which is why
-   `scoring.candidates` nulls earnings yield when the share count is older
-   than 400 days. Stale would otherwise score as an E/P off by orders of
-   magnitude.
+   ticker points at a new holding-company CIK with one quarter of history -
+   no silver fundamentals until the holdco's first 10-K or a predecessor-CIK
+   merge (needs a ruling). Multi-class filers (BRK) report share counts as
+   dimensioned facts CompanyFacts omits - `scoring.candidates` nulls earnings
+   yield when the share count is older than 400 days.
 
 0d. **Metrics are security-type- and industry-conditional; build around it.**
    Commodity trusts (SLV, SIC 6221) file 10-Ks whose "net income" is metal
-   appreciation - SLV ranked #2 in v2 before the guard, and it even reports
-   a Revenues tag, so only the SIC code discriminates. `bronze_entity` now
-   stores SIC per symbol (EDGAR submissions endpoint) and earnings-based
-   ratios go neutral for `NON_OPERATING_SIC` vehicles. Related, still open:
-   GP/A is undefined for financials (no cost-of-revenue) and value/quality
-   ranked cross-universe are structural sector bets - sector-relative
-   ranking (SIC is already on hand) is the flagged fix, decide before P4.
+   appreciation - SLV ranked #2 in v2 before the guard, and it reports a
+   Revenues tag, so only SIC discriminates. `bronze_entity` stores SIC per
+   symbol; earnings ratios go neutral for `NON_OPERATING_SIC`. Still open:
+   GP/A undefined for financials; value/quality cross-universe are structural
+   sector bets (decision above). The inverted low-vol reading (t -2.6) is a
+   survivor-universe artifact, not a verdict on the anomaly.
+
+0e. **Long-horizon t-stats are inflated by window overlap.** Monthly eval
+   dates with a 12-month window overlap 11/12ths; naive t at 252 read 7.0,
+   corrected (yearly folds / non-overlapping windows) ~2-3.4. Judge long
+   horizons on fold-level t. Documented in `backtest.metrics.ic_summary`.
 
 1. **Never raise numpy above 1.x in `databricks.yml`.** Serverless
-   `environment_version: "3"` ships `pyarrow==15.0.2`, which requires
-   `numpy>=1.16.6,<2`, and nothing in the dependency list upgrades pyarrow.
-   Arrow backs every Spark/pandas conversion, so a numpy 2.x pin breaks the job
-   at the next run, not at deploy. `bundle validate` cannot catch it.
-   - **If numpy must move:** pin pyarrow >=16 in the same change and prove the
-     pair resolves before shipping. Why and how it was caught:
-     `completed/plan-completed-2026-08-09.md`.
+   `environment_version: "3"` ships `pyarrow==15.0.2` (requires numpy<2);
+   a numpy 2.x pin breaks the job at the next run, not at deploy, and
+   `bundle validate` cannot catch it. If numpy must move, pin pyarrow >=16 in
+   the same change. Full record: `completed/plan-completed-2026-08-09.md`.
 
-2. **Job deps are pinned to versions the base image tolerates, not to
-   `uv.lock`.** `databricks.yml` and `pyproject.toml` are aligned by hand where
-   the base image constrains a package (numpy, requests). Changing one without
-   the other reintroduces the local/production split.
+2. **Job deps are pinned to versions the base image tolerates, not `uv.lock`.**
+   `databricks.yml` and `pyproject.toml` are aligned by hand where the base
+   image constrains a package (numpy, requests).
 
 3. **`WATCHLIST` in the dotenv shadows `tickers.txt` locally.**
-   `config._load_tickers()` reads the env var first, and `load_dotenv()` finds
-   the dotenv even when the variable is unset in the parent shell. Local runs
-   therefore never exercise the file path. To test the fallback, run from a
-   directory with no dotenv above it.
+   `config._load_tickers()` reads the env var first and `load_dotenv()` finds
+   the dotenv even when unset in the parent shell. To test the file path, run
+   from a directory with no dotenv above it.
 
-4. **`tickers.txt` matters only for deploy.** It is gitignored, force-synced by
-   `databricks.yml` (`sync.include`), and confirmed present in the deployed
-   workspace bundle. A manual deploy ships whatever the file holds - run
-   `uv run python scripts/watchlist.py seed` first. CI materializes it from the
-   `WATCHLIST` repo secret instead.
+4. **`tickers.txt` matters only for deploy.** Gitignored, force-synced by
+   `databricks.yml`. Manual deploy ships whatever it holds - run
+   `uv run python scripts/watchlist.py seed` first. CI materializes it from
+   the `WATCHLIST` repo secret.
 
-5. **Databricks Free Edition constraints** that break the build are enumerated in
-   CLAUDE.md ("Free Edition gotchas"). Still current; not duplicated here.
+5. **Databricks Free Edition constraints** are enumerated in CLAUDE.md
+   ("Free Edition gotchas"). Still current.
 
 ## Settled
 
-- **Bundles need no local terraform.** The CLI downloads its own (TF 1.5.5 +
-  provider 1.124.0); `DATABRICKS_TF_*` are air-gapped-only. Record in
+- **Bundles need no local terraform.** The CLI downloads its own;
+  `DATABRICKS_TF_*` are air-gapped-only. Record:
   `completed/plan-completed-2026-08-09.md`.
-- **`astral-sh/setup-uv` publishes floating major tags only through `v7`.** v8
-  and v9 must be referenced by exact tag. Same record.
+- **`astral-sh/setup-uv` floating major tags end at `v7`;** v8+ by exact tag.
+- **2026-08-11 decisions** (window 126, cadence, themes rejected, cost model,
+  variant format, task 11 design): `completed/plan-completed-2026-08-11.md`.
