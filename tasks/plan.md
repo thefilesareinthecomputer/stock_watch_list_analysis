@@ -35,22 +35,10 @@ Commits `7195ab1`, `14fe8ec`, `bf908e0`.
 Specced in `tasks/SPEC-SIGNAL-TIERS.md`. 10b (registry) is done.
 
 11. **Buy/sell calls with frozen expectations and a human-ratified
-    post-mortem** (design ruled 2026-08-11, record in
-    `completed/plan-completed-2026-08-11.md`):
-    - Append-only local snapshot of v2 calls (currently overwrite-on-rebuild;
-      must be immutable before the paper clock starts).
-    - Every call carries the decayed walk-forward expectation it will be
-      graded against.
-    - Hysteresis (enter top decile, exit below median), not bare thresholds.
-    - Per-rebalance post-mortem: settle every gradeable vintage against its
-      frozen expectation, per-signal attribution, SUGGESTED registry events
-      with evidence attached - measurement automated, decisions human-ratified.
-      Single-interval misses labeled noise; only cumulative drift triggers
-      suggestions. Immutable dated report per round.
-    -> verify: on held-out history the buy set beats the sell set on forward
-    excess; the known-answer test still returns ~zero on the benchmark; a
-    snapshot diff across runs shows append-only; a post-mortem on a synthetic
-    drifting vintage emits a demotion suggestion and a healthy one emits none.
+    post-mortem.** Fully specced: `tasks/SPEC-BUY-SELL-CALLS.md` (state
+    machine, `gold_calls` schema, expectation freezing, settle->report->emit
+    ordering, drift defaults, nine success criteria). Design ruling recorded
+    in `completed/plan-completed-2026-08-11.md`. Starts the paper clock.
 
 12. Priority tier for held positions (`knowledge/positions.md`, account-
     sectioned) -> verify: tier membership never leaks into a tracked file;

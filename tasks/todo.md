@@ -20,11 +20,11 @@ variants as recorded reproducible config; tier registry with methodology v2
 decay validated 1-12 months with overlap-corrected significance. 303 tests.
 All synced to develop and main at `bf908e0` + doc follow-ups.
 
-**START WITH task 11** - buy/sell calls per the ruled design (frozen
-expectations, hysteresis, append-only v2 snapshot, human-ratified per-rebalance
-post-mortem). Full design: plan.md task 11 and
-`completed/plan-completed-2026-08-11.md`. This also starts the paper clock,
-which is the only path to go-live evidence.
+**START WITH task 11 - spec is written and ready to build:**
+`tasks/SPEC-BUY-SELL-CALLS.md` (state machine, `gold_calls` schema, frozen
+expectations, settle->report->emit, drift defaults, success criteria 1-9).
+This starts the paper clock, the only path to go-live evidence. Four open
+questions are listed in the spec with proposed defaults; none block the build.
 
 ```bash
 uv run pytest tests/ -q                     # 303 passing
