@@ -124,6 +124,19 @@ event; grade a vintage against anything but its own frozen expectation.
 2. **Haircut factor** 0.5 - revisit when the paper track has its own data.
 3. **Does the held-position tier (task 12) gate call visibility** or only
    report ordering? Decide when task 12 lands.
-4. **Backfilled state machine start**: seed prior state from the walk-forward
-   history's last state, or start all symbols at `none`? Proposed: start at
-   `none` - cleaner, and the paper record should not inherit simulated state.
+
+## Rulings (2026-08-11, at build time)
+
+- **State machine start**: all symbols start at `none`; the paper record
+  inherits no simulated state. (Was open question 4.)
+- **ETF identification**: yfinance chart-endpoint `instrumentType` stored per
+  symbol in `bronze_security` (`common.security`), on top of the benchmark
+  list and the EDGAR non-operating SICs. Foreign ADRs stay call-eligible.
+- **First round**: 2026-08 month-end, prospective. `first_round_month` in the
+  registry's `calls` block; `rebalance.py` refuses earlier vintages as
+  backdated.
+- **Durable record**: the spec's "gold_calls (local DuckDB)" would die with a
+  warehouse rebuild, so the evidence lives in gitignored, append-only
+  `calls_log.jsonl` (private - it names watchlist symbols) and `gold_calls`
+  is rebuilt from it. Post-mortem reports stay tracked but carry aggregates
+  and signal-level attribution only, never symbols.

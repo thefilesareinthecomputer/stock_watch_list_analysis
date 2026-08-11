@@ -32,6 +32,8 @@ _relay.md
 src/common/tickers.txt
 # Validation cache — derived, and holds the private symbols
 src/common/.tickers_validated.json
+# Buy/sell call record — append-only evidence, names watchlist symbols
+calls_log.jsonl
 
 # Claude Code — per-device, not shared
 .claude/inbox/

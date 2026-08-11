@@ -299,6 +299,12 @@ A single wide table joining signals + prices + fundamentals. **Zero joins needed
 
 ## Sample Queries
 
+**Column naming gotcha:** `gold.daily_analytics` uses snake_case aliases, but the
+fact/dim tables keep yfinance camelCase - backtick-quote them in SQL: `trailingPE`,
+`dividendYield`, `marketCap`, `returnOnEquity`, `shortName`. `dim_date` uses `date`
+(not `calendar_date`); `fact_market_price_daily` uses `return_21d/63d/252d` (not
+30d/90d). `dividend_yield_trap` is BOOLEAN in gold, DOUBLE in silver.
+
 ### Daily Analytics (zero-join table)
 
 ```sql
@@ -608,7 +614,11 @@ uv run pytest tests/ -v
 
 Work on `develop`; `main` is the deploy trigger. Merge `develop` into `main` and push - GitHub
 Actions then runs test -> validate -> deploy to Databricks. CI credentials are GitHub repo secrets
-(`DATABRICKS_HOST`, `DATABRICKS_TOKEN`, `FRED_API_KEY`, `ALERT_EMAIL`); see CLAUDE.md.
+(`DATABRICKS_HOST`, `DATABRICKS_TOKEN`, `FRED_API_KEY`, `ALERT_EMAIL`), fed to the deploy as
+`BUNDLE_VAR_*`; local dev stays keyless (OAuth), only CI holds a token. The CI deploy also
+materializes `tickers.txt` from the `WATCHLIST` repo secret (comma- or newline-separated) -
+keep that secret in sync with your local list, or an empty secret falls back to
+`tickers.example.txt`. Benchmarks `SPY`/`QQQ` are always added on top.
 
 Manual deploy (optional, from a machine with the OAuth profile):
 

@@ -37,7 +37,32 @@ def load_registry(path=REGISTRY_PATH):
         if event["action"] in ("promote", "demote") \
                 and event["signal"] not in names:
             raise ValueError(f"event names unknown signal {event['signal']}")
+    _validate_calls(registry)
     return registry
+
+
+def _validate_calls(registry):
+    """Call thresholds and drift constants are registry data (SPEC-BUY-SELL-CALLS):
+    changing them is a recorded event, so a malformed block must fail loudly
+    rather than fall back to a silent default in code."""
+    calls = registry.get("calls")
+    if calls is None:
+        raise ValueError("registry: missing calls block")
+    enter, exit_ = calls.get("enter_percentile"), calls.get("exit_percentile")
+    haircut, drift = calls.get("haircut"), calls.get("drift")
+    if not (enter and exit_ and 0.0 < exit_ < enter <= 1.0):
+        raise ValueError("calls: need 0 < exit_percentile < enter_percentile <= 1")
+    if not (haircut and 0.0 < haircut <= 1.0):
+        raise ValueError("calls: haircut must be in (0, 1]")
+    if drift is None or not all(
+            drift.get(k, 0) > 0
+            for k in ("below_mean_rounds", "below_p10_rounds", "fold_t_bar")):
+        raise ValueError("calls: drift needs positive below_mean_rounds, "
+                         "below_p10_rounds, fold_t_bar")
+    first = calls.get("first_round_month", "")
+    if not (len(first) == 7 and first[4] == "-" and first[:4].isdigit()
+            and first[5:].isdigit()):
+        raise ValueError("calls: first_round_month must be YYYY-MM")
 
 
 def scored_variant(registry):

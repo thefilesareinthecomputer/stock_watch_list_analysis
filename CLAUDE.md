@@ -1,110 +1,74 @@
 # CLAUDE.md
 
 Databricks medallion lakehouse for equity analytics. **Architecture, tables, query
-patterns, indicator formulas, and design decisions live in [`README.md`](README.md)** —
-read it before touching the pipeline. This file is operational guidance only.
+patterns, deploy steps, and design decisions live in [`README.md`](README.md)**;
+first principles and operational constraints (incl. the Free Edition build
+breakers) in [`SPEC.md`](SPEC.md). This file is agent guidance only.
 
 ## Working agreement
-- User runs all installs and git commands. Assistant writes to requirements files and
-  **stages** git commands for approval — never commits or pushes directly.
+- User runs all installs and git commands. Assistant writes to requirements files
+  and **stages** git commands for approval - never commits or pushes directly.
 - Prefer architectural polish over more indicators / ML / tickers.
 - Indicator correctness matters: match industry-standard formulas with citations.
 
 ## Build / test / deploy
 ```bash
-uv sync                              # builds .venv from pyproject.toml + uv.lock
-uv run pytest tests/ -v              # Spark tests need a JDK on JAVA_HOME
-# JDK for local Spark tests (else they skip): brew install openjdk@17
-# export JAVA_HOME=/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home
-
-set -a; source .env; set +a          # load FRED_API_KEY, ALERT_EMAIL from .env
-BUNDLE_VAR_fred_api_key="$FRED_API_KEY" \
-BUNDLE_VAR_alert_email="$ALERT_EMAIL" \
-databricks bundle deploy
-databricks bundle run stock_analytics_pipeline
+uv sync
+uv run pytest tests/ -v              # Spark tests need JDK 17 on JAVA_HOME, else they skip
+set -a; source .env; set +a          # FRED_API_KEY, ALERT_EMAIL
+BUNDLE_VAR_fred_api_key="$FRED_API_KEY" BUNDLE_VAR_alert_email="$ALERT_EMAIL" \
+databricks bundle deploy             # auth: OAuth via `databricks auth login`, no PAT
 ```
-No private values live in `databricks.yml`; the FRED key and failure-notification email flow from
-`.env` at deploy via `BUNDLE_VAR_fred_api_key` / `BUNDLE_VAR_alert_email`. Auth is OAuth (`databricks
-auth login`), no PAT. Set `ALERT_EMAIL` in `.env` or failure emails go nowhere.
-Bundles run on Terraform under the hood, but the CLI downloads its own (`databricks bundle debug
-terraform` reports which). No local terraform install is needed; `DATABRICKS_TF_EXEC_PATH` and
-`DATABRICKS_TF_VERSION` are for air-gapped use only.
+No private values in `databricks.yml`; secrets flow from `.env` at deploy. CI
+secrets and the `WATCHLIST` repo secret: README "Quick Start" step 3.
 
 ## Local-first development (DuckDB)
-
-Databricks is the production target; iteration happens locally because a run
-there costs ~18 minutes and quota, against ~2 minutes locally.
-
+Databricks is the production target; iteration happens locally (~2 min against
+~18 min plus quota per run there).
 ```bash
-uv run python scripts/backfill.py        # yfinance -> warehouse/market.duckdb (~2 min)
-uv run python scripts/backfill_fundamentals.py  # SEC EDGAR -> bronze_fundamentals (~3 min)
-uv run python scripts/build_local.py     # local silver + gold + forward returns (~3 min)
-uv run python scripts/evaluate.py --candidates  # walk-forward verdict on candidate signals
-uv run python scripts/ic_decay.py        # IC by 1-12 month horizon for the registry's signals
-uv run pytest tests/test_engine_parity.py -q   # same SQL, both engines
+uv run python scripts/backfill.py               # yfinance -> warehouse/market.duckdb
+uv run python scripts/backfill_fundamentals.py  # SEC EDGAR -> bronze_fundamentals
+uv run python scripts/build_local.py            # silver + gold + forward returns
+uv run python scripts/evaluate.py --candidates  # walk-forward verdict on candidates
+uv run python scripts/ic_decay.py               # IC by 1-12 month horizon
+uv run python scripts/validate_calls.py         # call state machine replay
+uv run python scripts/rebalance.py              # settle -> report -> emit call round
+uv run pytest tests/test_engine_parity.py -q    # same SQL, both engines
 ```
 EDGAR needs a contact User-Agent: `EDGAR_USER_AGENT` in `.env`, falling back to
-`ALERT_EMAIL`. Neither set -> the backfill refuses to run.
-
-Indicators are shared code, not a port: `common.indicators.build_signal_series`
-is pure pandas and runs in both places, so parity there is by construction. Only
-SQL needs the parity test - and any SQL that must run in both goes through it
-before use, with differences resolved to the common subset rather than branched.
+`ALERT_EMAIL`; neither set -> the backfill refuses to run.
+Indicators are shared code (`common.indicators.build_signal_series`, pure pandas),
+so parity there is by construction. SQL that must run on both engines goes through
+`tests/test_engine_parity.py` first and stays in the common dialect subset.
 
 ## Private, gitignored, does not travel between devices
-
 | Path | What | Regenerable? |
 |---|---|---|
 | `.env` | Secrets, `WATCHLIST` | No |
 | `src/common/tickers.txt` | The real watchlist | Yes - `watchlist.py seed` |
 | `warehouse/` | Local DuckDB | Yes - `backfill.py`, ~2 min |
-| `knowledge/` | Research and KB, incl. `positions.md` (held positions, by account) | **No** |
+| `calls_log.jsonl` | Buy/sell call record (append-only evidence) | **No** |
+| `knowledge/` | Research and KB, incl. `positions.md` (held positions) | **No** |
 | `_relay.md` | Handoff scratch file, bidirectional | No |
 
-Never echo the contents of these into commit messages, tracked files, or
-anything reaching the public repo.
+Never echo the contents of these into commit messages, tracked files, or anything
+reaching the public repo.
 
 ## Branch & deploy workflow
-Solo, one Databricks environment. Work on `develop`; `main` is stable and the deploy trigger.
-- Push/PR to `develop` or `main` runs CI (`.github/workflows/deploy.yml`): `test` then `bundle validate`.
-- Push to `main` also runs `bundle deploy` (`default` target). Deploy is gated behind green `test`.
-- Deploy updates the job definition only; the pipeline runs on its daily cron or `bundle run`.
-- **Ship:** merge `develop` -> `main` and push. Never commit straight to `main`.
-- CI auth/config live in GitHub repo secrets (`DATABRICKS_HOST`, `DATABRICKS_TOKEN`, `FRED_API_KEY`,
-  `ALERT_EMAIL`), fed to deploy as `BUNDLE_VAR_*`. Local dev stays keyless (OAuth); only CI holds a token.
-
-## Databricks Free Edition gotchas (these break the build)
-1. `__file__` undefined — `spark_python_task` runs via `exec()`. Use `try/except` + `os.getcwd()` fallback.
-2. `spark.createDataFrame(pandas_df)` fails (PySpark Connect ChunkedArray bug). Build Row-based with string dates + SQL `CAST`.
-3. DBFS disabled — no temp writes to `/tmp`. Row-based approach only.
-4. `environment_version` must be `"3"` (not `"3.1"`). Valid: 1–5.
-5. Serverless only, daily quota limits. No classic compute.
-6. Declare deps in `environments.spec.dependencies` in `databricks.yml`.
-7. yfinance ≥ 0.2.51 returns multi-level columns even for one ticker — `droplevel("Ticker")`.
-8. No `Adj Close` — `auto_adjust=True` is the default; `close` IS the adjusted close.
-
-## Query gotcha: star-schema columns are camelCase
-`gold.daily_analytics` uses snake_case aliases; the fact/dim tables keep yfinance camelCase
-(backtick-quote them in SQL): `trailingPE`, `dividendYield`, `marketCap`, `returnOnEquity`,
-`shortName`. `dim_date` uses `date` (not `calendar_date`); `fact_market_price_daily` uses
-`return_21d/63d/252d` (not 30d/90d). `dividend_yield_trap` is BOOLEAN in gold, DOUBLE in silver.
+Solo, one Databricks environment. Work on `develop`; `main` is stable and the
+deploy trigger (CI: test -> validate, push to `main` also deploys). **Ship:**
+merge `develop` -> `main` and push. Never commit straight to `main`.
 
 ## Ticker config
-Watchlist source of truth: `src/common/tickers.txt` (one ticker per line, `#` comments ok).
-This file is **gitignored** (private — real strategy list). A fresh clone falls back to the
-tracked `tickers.example.txt` starter. `config.py::_load_tickers()` prefers `tickers.txt`,
-else the example. `databricks.yml` force-includes `tickers.txt` via `sync.include`, so a **manual**
-deploy from a machine that has the file ships the real list. The **CI deploy** materializes
-`tickers.txt` from the `WATCHLIST` repo secret (comma- or newline-separated) before deploying;
-keep that secret in sync with your local `tickers.txt`. If the secret is empty, the deploy falls
-back to `tickers.example.txt`. Benchmarks `SPY`/`QQQ` are always added on top.
-To edit the watchlist, change `WATCHLIST` in `.env`, then run `uv run python scripts/watchlist.py seed`
-(and `... check` to confirm every symbol still resolves on yfinance - dead tickers contribute no rows
-and never fail the job; retired ones are explained by `src/common/ticker_migrations.json`)
-to materialize `tickers.txt` for a manual deploy. Mirror the change to the `WATCHLIST` repo secret.
+`src/common/tickers.txt` (gitignored) is the watchlist source of truth; a fresh
+clone falls back to `tickers.example.txt`. To edit: change `WATCHLIST` in `.env`,
+run `uv run python scripts/watchlist.py seed` (and `... check` - dead tickers fail
+silently in the pipeline), mirror the change to the `WATCHLIST` repo secret.
+Gotcha: the dotenv `WATCHLIST` shadows `tickers.txt` locally - `_load_tickers()`
+reads the env var first.
 
-## Code size — track after major changes to prevent bloat
+## Code size - track after major changes to prevent bloat
 ```bash
-find src   -name "*.py" -exec wc -l {} +   # ~5412 across 42 files
-find tests -name "*.py" -exec wc -l {} +   # ~4154 across 23 files
+find src   -name "*.py" -exec wc -l {} +   # ~6128 across 48 files
+find tests -name "*.py" -exec wc -l {} +   # ~4893 across 30 files
 ```

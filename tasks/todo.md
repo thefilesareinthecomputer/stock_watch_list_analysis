@@ -12,25 +12,24 @@ relative claim; below the index is failure.
 Read in this order: `tasks/plan.md` (ordered tasks + gotchas), `SPEC.md`
 (invariants), `tasks/SPEC-SIGNAL-TIERS.md` (tiers and calls).
 
-**State: the measurement layer is complete and the re-sort is done.** Local
-warehouse builds bronze -> silver -> gold incl. EDGAR candidates (~3 min);
-evaluation harness with known-answer/look-ahead checks; trial log (32);
-variants as recorded reproducible config; tier registry with methodology v2
-(scored = 12-1 momentum + earnings yield, incumbents demoted on evidence);
-decay validated 1-12 months with overlap-corrected significance. 303 tests.
-All synced to develop and main at `bf908e0` + doc follow-ups.
+**State: task 11 is BUILT - the call machinery is live and waiting for the
+calendar.** State machine + hysteresis, durable `calls_log.jsonl` ->
+`gold_calls`, frozen expectations with source hash and 0.5 haircut,
+settle->report->emit orchestrator, drift detection with immutable
+post-mortems. Replay validation green (spread positive 16/17 years @126,
+turnover 5.3% vs 50% bound). Rulings recorded in
+`tasks/SPEC-BUY-SELL-CALLS.md`. 356 tests.
 
-**START WITH task 11 - spec is written and ready to build:**
-`tasks/SPEC-BUY-SELL-CALLS.md` (state machine, `gold_calls` schema, frozen
-expectations, settle->report->emit, drift defaults, success criteria 1-9).
-This starts the paper clock, the only path to go-live evidence. Four open
-questions are listed in the spec with proposed defaults; none block the build.
+**NEXT ACTION: run `uv run python scripts/rebalance.py` after the 2026-08-31
+close** (backfill + build_local first so silver reaches Aug 31). That emits
+the first prospective round and starts the paper clock. Running it earlier is
+safe - it refuses backdated vintages by design.
 
 ```bash
-uv run pytest tests/ -q                     # 303 passing
+uv run pytest tests/ -q                     # 356 passing
 uv run python scripts/build_local.py        # full local rebuild, ~3 min
-uv run python scripts/evaluate.py --candidates
-uv run python scripts/ic_decay.py           # IC by 1-12 month horizon
+uv run python scripts/validate_calls.py     # state machine replay
+uv run python scripts/rebalance.py          # settle -> report -> emit
 ```
 
 If `warehouse/` is missing (gitignored): `scripts/backfill.py` then
@@ -42,6 +41,8 @@ If `warehouse/` is missing (gitignored): `scripts/backfill.py` then
 - **XOM predecessor-CIK ruling** (plan.md gotcha 0c).
 - **Stale branch:** `feature/upgrade-stock-pipeline` on origin, superseded -
   delete or keep.
+- **EA is dead on yfinance** (2026 take-private): run `watchlist.py check`,
+  add it to `ticker_migrations.json`, and update `WATCHLIST`.
 
 ## Open
 

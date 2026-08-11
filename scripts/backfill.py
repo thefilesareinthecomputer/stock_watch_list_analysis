@@ -31,6 +31,7 @@ import yfinance as yf  # noqa: E402
 
 from common.config import TICKERS, BENCHMARK_TICKERS, HISTORY_START_DATE  # noqa: E402
 from common.run_context import new_run_id, now_ts  # noqa: E402
+from common.security import ensure_quote_types  # noqa: E402
 
 WAREHOUSE = os.path.join(ROOT, "warehouse", "market.duckdb")
 TABLE = "bronze_prices"
@@ -136,6 +137,10 @@ def main():
 
         print(f"  {min(i + CHUNK, len(symbols))}/{len(symbols)} symbols, "
               f"{total} rows", flush=True)
+
+    fetched = ensure_quote_types(con, symbols)
+    if fetched:
+        print(f"  stored quote types for {fetched} new symbols")
 
     rows, syms, lo, hi = con.execute(
         f"SELECT COUNT(*), COUNT(DISTINCT symbol), MIN(date), MAX(date) FROM {TABLE}"

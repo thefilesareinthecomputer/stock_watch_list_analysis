@@ -1,0 +1,135 @@
+"""Rebalance orchestration: settle -> report -> emit, and the refusals."""
+import copy
+import json
+import os
+import sys
+from datetime import date
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
+
+import duckdb
+import pytest
+
+from rebalance import due_round_date, run_rebalance
+from scoring.calls import emit_round, read_rounds
+from scoring.tiers import load_registry
+
+JUNE, JULY = "2026-06-30", "2026-07-31"
+
+
+def _registry(first_round_month="2026-06"):
+    registry = copy.deepcopy(load_registry())
+    registry["calls"]["first_round_month"] = first_round_month
+    return registry
+
+
+def _warehouse():
+    con = duckdb.connect(":memory:")
+    con.execute("CREATE TABLE silver_signals (symbol VARCHAR, "
+                "as_of_date TIMESTAMP, change_30d_pct DOUBLE, "
+                "change_365d_pct DOUBLE)")
+    con.execute("CREATE TABLE gold_candidate_signals (symbol VARCHAR, "
+                "as_of_date TIMESTAMP, earnings_yield DOUBLE, "
+                "gross_profitability DOUBLE, roe DOUBLE)")
+    con.execute("CREATE TABLE bronze_entity (symbol VARCHAR, sic VARCHAR)")
+    con.execute("CREATE TABLE bronze_security (symbol VARCHAR, "
+                "quote_type VARCHAR)")
+    con.execute("CREATE TABLE backtest_forward_returns (symbol VARCHAR, "
+                "as_of_date TIMESTAMP, horizon INTEGER, fwd_return DOUBLE, "
+                "excess_return DOUBLE)")
+    for d in (JUNE, JULY):
+        for i in range(12):
+            con.execute("INSERT INTO silver_signals VALUES (?, ?, 0.0, ?)",
+                        [f"S{i:02d}", d, i * 10.0])
+            con.execute("INSERT INTO gold_candidate_signals VALUES "
+                        "(?, ?, ?, 0.1, 0.1)", [f"S{i:02d}", d, i * 0.01])
+    return con
+
+
+def _decay_file(tmp_path):
+    metrics = {str(h): {"ic": {"mean": 0.05, "t_stat": 4.0, "n_dates": 190,
+                               "by_year": {"2025": 0.05}},
+                        "excess_net_distribution":
+                            {"mean": 0.02, "p10": -0.04, "p90": 0.09,
+                             "n_dates": 190}}
+               for h in (21, 63, 126)}
+    path = tmp_path / "decay.json"
+    path.write_text(json.dumps({"definition_hash": "abc",
+                                "metrics": metrics}))
+    return str(path)
+
+
+def _run(con, tmp_path, today=date(2026, 8, 5), registry=None):
+    return run_rebalance(
+        con, registry or _registry(), today,
+        calls_path=str(tmp_path / "calls_log.jsonl"),
+        report_dir=str(tmp_path / "post_mortem"),
+        decay_path=_decay_file(tmp_path),
+        trial_log=str(tmp_path / "trial_log.jsonl"))
+
+
+def test_first_run_emits_and_reports_nothing_to_grade(tmp_path):
+    status = _run(_warehouse(), tmp_path)
+    assert status["emitted"] is True
+    assert status["round_date"] == JULY  # latest completed month
+    assert status["settled"] == 0 and status["report_written"] is True
+    rounds = read_rounds(str(tmp_path / "calls_log.jsonl"))
+    assert len(rounds) == 1
+    assert rounds[0]["expectation"]["horizons"]["21"][
+        "excess_net_haircut"]["mean"] == pytest.approx(0.01)
+    with open(tmp_path / "trial_log.jsonl") as f:
+        assert len(f.readlines()) == 1  # criterion 8: every round is a trial
+
+
+def test_rerun_same_day_is_a_noop(tmp_path):
+    con = _warehouse()
+    _run(con, tmp_path)
+    status = _run(con, tmp_path)
+    assert status["emitted"] is False
+    assert status["reason"] == "round already recorded"
+    assert len(read_rounds(str(tmp_path / "calls_log.jsonl"))) == 1
+
+
+def test_settlement_failure_refuses_the_emit(tmp_path):
+    con = _warehouse()
+    # A recorded round whose frozen expectation cannot grade a closed rung.
+    emit_round({"as_of_date": JUNE, "methodology_version": "v2-local",
+                "run_id": "r", "created_ts": "t",
+                "expectation": {"horizons": {}},
+                "calls": [{"symbol": "S11", "score": 1.0,
+                           "score_percentile": 1.0,
+                           "component_percentiles": {}, "prior_call": "none",
+                           "call": "buy"}]},
+               path=str(tmp_path / "calls_log.jsonl"))
+    con.execute("INSERT INTO backtest_forward_returns VALUES "
+                "('SPY', ?, 21, 0.01, 0.0)", [JUNE])
+    with pytest.raises(ValueError, match="cannot grade"):
+        _run(con, tmp_path)
+    assert len(read_rounds(str(tmp_path / "calls_log.jsonl"))) == 1  # no emit
+    assert not (tmp_path / "post_mortem").exists()  # aborted before report
+
+
+def test_before_first_round_month_refuses_backdated_emit(tmp_path):
+    status = _run(_warehouse(), tmp_path,
+                  registry=_registry(first_round_month="2026-08"))
+    assert status["emitted"] is False
+    assert "prospectively" in status["reason"]
+
+
+def test_mid_month_uses_completed_month_not_partial_current():
+    con = _warehouse()
+    con.execute("INSERT INTO silver_signals VALUES ('S00', '2026-08-04', "
+                "0.0, 10.0)")  # partial August data
+    round_date, reason = due_round_date(con, _registry()["calls"],
+                                        date(2026, 8, 5))
+    assert round_date == JULY and reason is None
+
+
+def test_month_end_evening_emits_todays_round():
+    con = _warehouse()
+    con.execute("INSERT INTO silver_signals VALUES ('S00', '2026-08-31', "
+                "0.0, 10.0)")
+    round_date, _ = due_round_date(con, _registry()["calls"],
+                                   date(2026, 8, 31))
+    assert round_date == "2026-08-31"

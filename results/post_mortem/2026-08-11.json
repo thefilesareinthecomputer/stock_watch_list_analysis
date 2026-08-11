@@ -1,0 +1,15 @@
+{
+  "drift": {
+    "signal_t": {},
+    "suggestions": [],
+    "trailing_below_mean": 0,
+    "trailing_below_p10": 0
+  },
+  "n_vintages_settled": 0,
+  "notes": [
+    "Single-interval misses are noise by construction (1-month fold-level t ~1.9); only cumulative drift across vintages triggers a suggestion.",
+    "Survivorship caveat: expectations were estimated on today's survivors, so realized-vs-expected gaps read worse than they are; compare trends, not levels."
+  ],
+  "report_date": "2026-08-11",
+  "settlements": []
+}

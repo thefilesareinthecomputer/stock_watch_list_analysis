@@ -1,6 +1,17 @@
 {
   "methodology_version": "v2-local",
   "note": "Local composite only. Production (Databricks) stays on components.py v1 until L5 ships candidate data there; earnings_yield does not exist on Databricks yet.",
+  "calls": {
+    "enter_percentile": 0.90,
+    "exit_percentile": 0.50,
+    "haircut": 0.5,
+    "first_round_month": "2026-08",
+    "drift": {
+      "below_mean_rounds": 5,
+      "below_p10_rounds": 3,
+      "fold_t_bar": 2.0
+    }
+  },
   "signals": [
     {"name": "mom_12_1", "tier": "scored",
      "expression": "(1 + change_365d_pct / 100.0) / (1 + change_30d_pct / 100.0) - 1",
@@ -66,6 +77,8 @@
      "reason": "Mislabelled risk measure; measured nothing."},
     {"date": "2026-08-11", "action": "demote", "signal": "mfi",
      "from": "scored", "to": "monitored", "trial_count_at_decision": 17,
-     "reason": "Mislabelled quality measure; measured nothing."}
+     "reason": "Mislabelled quality measure; measured nothing."},
+    {"date": "2026-08-11", "action": "initial_calls_config",
+     "detail": "Task 11 (SPEC-BUY-SELL-CALLS): hysteresis 0.90 enter / 0.50 exit, expectation haircut 0.5 (McLean-Pontiff midpoint), drift suggestions at 5 settlements below haircut mean, 3 below p10, fold-t bar 2.0. First round 2026-08 month-end, prospective - no backfilled vintages, per user ruling 2026-08-11. Revisable only by recorded event."}
   ]
 }

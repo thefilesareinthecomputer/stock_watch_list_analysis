@@ -98,19 +98,40 @@ def turnover(df):
     return np.nan if not rates else float(np.mean(rates))
 
 
-def top_decile_excess(df, cost_bps=0.0):
-    """Mean excess of the top decile vs the equal-weight universe, per date.
+def top_decile_excess_by_date(df, cost_bps=0.0):
+    """Excess of the top decile vs the equal-weight universe, per date.
 
     Costs charge the top-decile leg a full round trip per window; the
     equal-weight comparison stays gross, which is conservative against us.
     """
     d = _with_deciles(df)
-    per_date = d.groupby("as_of_date").apply(
+    return d.groupby("as_of_date").apply(
         lambda g: net_return(
             g.loc[g["decile"] == TOP_DECILE, "fwd_return"].mean(), cost_bps)
         - g["fwd_return"].mean(),
         include_groups=False)
-    return float(per_date.mean())
+
+
+def top_decile_excess(df, cost_bps=0.0):
+    """Mean of the per-date top-decile excess series."""
+    return float(top_decile_excess_by_date(df, cost_bps).mean())
+
+
+def excess_distribution(df, cost_bps=0.0):
+    """The walk-forward distribution of top-decile net excess.
+
+    This is what a frozen expectation quotes (SPEC-BUY-SELL-CALLS): a call
+    round is graded against the mean/p10/p90 of this distribution, not
+    against a point estimate, so a single bad window can be told apart from
+    drift.
+    """
+    per_date = top_decile_excess_by_date(df, cost_bps)
+    if per_date.empty:
+        return {"mean": np.nan, "p10": np.nan, "p90": np.nan, "n_dates": 0}
+    return {"mean": float(per_date.mean()),
+            "p10": float(per_date.quantile(0.10)),
+            "p90": float(per_date.quantile(0.90)),
+            "n_dates": int(len(per_date))}
 
 
 def evaluate(df, cost_bps=0.0):
@@ -125,4 +146,5 @@ def evaluate(df, cost_bps=0.0):
         "turnover": turnover(df),
         "excess_vs_equal_weight_gross": top_decile_excess(df, 0.0),
         "excess_vs_equal_weight_net": top_decile_excess(df, cost_bps),
+        "excess_net_distribution": excess_distribution(df, cost_bps),
     }

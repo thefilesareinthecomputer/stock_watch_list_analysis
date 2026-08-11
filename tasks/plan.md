@@ -35,10 +35,17 @@ Commits `7195ab1`, `14fe8ec`, `bf908e0`.
 Specced in `tasks/SPEC-SIGNAL-TIERS.md`. 10b (registry) is done.
 
 11. **Buy/sell calls with frozen expectations and a human-ratified
-    post-mortem.** Fully specced: `tasks/SPEC-BUY-SELL-CALLS.md` (state
-    machine, `gold_calls` schema, expectation freezing, settle->report->emit
-    ordering, drift defaults, nine success criteria). Design ruling recorded
-    in `completed/plan-completed-2026-08-11.md`. Starts the paper clock.
+    post-mortem.** **Built 2026-08-11** (spec + rulings:
+    `tasks/SPEC-BUY-SELL-CALLS.md`): state machine (`scoring.calls`),
+    durable record `calls_log.jsonl` -> `gold_calls`, frozen expectations
+    (`scoring.expectations`), settlement + drift + immutable post-mortems
+    (`backtest.settlement`/`postmortem`), orchestrator
+    `scripts/rebalance.py`. Replay validation passed: in-position beats out
+    at every rung, spread positive 16/17 years @126, turnover 5.3% monthly
+    vs 50% bound (`results/calls_validation.json`). 356 tests.
+    **Operational start: run `scripts/rebalance.py` after the 2026-08-31
+    close** - the first prospective round; earlier vintages are refused as
+    backdated by `first_round_month` in the registry.
 
 12. Priority tier for held positions (`knowledge/positions.md`, account-
     sectioned) -> verify: tier membership never leaks into a tracked file;
@@ -131,8 +138,8 @@ Specced in `tasks/SPEC-SIGNAL-TIERS.md`. 10b (registry) is done.
    `uv run python scripts/watchlist.py seed` first. CI materializes it from
    the `WATCHLIST` repo secret.
 
-5. **Databricks Free Edition constraints** are enumerated in CLAUDE.md
-   ("Free Edition gotchas"). Still current.
+5. **Databricks Free Edition constraints** are enumerated in SPEC.md
+   ("Operational constraints"). Still current.
 
 ## Settled
 

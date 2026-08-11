@@ -35,6 +35,7 @@ from backtest.returns import DECAY_HORIZONS, build_forward_returns  # noqa: E402
 from common.adjustments import adjusted_prices  # noqa: E402
 from common.fundamentals import build_fundamental_tables  # noqa: E402
 from common.indicators import build_signal_series  # noqa: E402
+from scoring.calls import CALLS_LOG, load_gold_calls  # noqa: E402
 from scoring.candidates import build_candidate_signals  # noqa: E402
 from scoring.components import percentile_sql  # noqa: E402
 from scoring.tiers import load_registry, rank_latest  # noqa: E402
@@ -148,6 +149,11 @@ def main():
     else:
         print("no bronze_fundamentals - run scripts/backfill_fundamentals.py "
               "to build the candidate tier")
+
+    # gold_calls is only a view of the durable call record: the append-only
+    # calls_log.jsonl survives a warehouse rebuild, this table does not.
+    if os.path.exists(CALLS_LOG):
+        print(f"gold_calls: {load_gold_calls(con)} rows from calls_log.jsonl")
 
     rows, syms, lo, hi = con.execute(
         "SELECT COUNT(*), COUNT(DISTINCT symbol), MIN(as_of_date), "

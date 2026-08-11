@@ -9,8 +9,8 @@ import pandas as pd
 import pytest
 
 from backtest.metrics import (
-    decile_means, evaluate, hit_rate, ic_by_date, ic_summary, monotonicity,
-    turnover,
+    decile_means, evaluate, excess_distribution, hit_rate, ic_by_date,
+    ic_summary, monotonicity, top_decile_excess_by_date, turnover,
 )
 
 DATES = ["2024-01-31", "2024-02-29", "2024-03-28"]
@@ -82,6 +82,32 @@ def test_costs_reduce_net_excess_by_exactly_the_round_trip():
     gap = (result["excess_vs_equal_weight_gross"]
            - result["excess_vs_equal_weight_net"])
     assert gap == pytest.approx(2 * 10.0 / 10_000.0, abs=1e-12)
+
+
+def test_excess_distribution_quantiles_from_per_date_series():
+    # Make the top decile's excess differ by date: bump only the top-decile
+    # symbols on one date (a whole-universe shift cancels out of top-minus-
+    # universe excess by construction).
+    df = _frame(lambda i: float(i))
+    bump = (df["as_of_date"] == pd.Timestamp(DATES[0])) \
+        & (df["signal"] >= 18.0)
+    df.loc[bump, ["fwd_return", "excess_return"]] += 0.10
+
+    per_date = top_decile_excess_by_date(df)
+    dist = evaluate(df)["excess_net_distribution"]
+    assert dist["n_dates"] == len(DATES)
+    assert dist["mean"] == pytest.approx(per_date.mean())
+    assert dist["p10"] == pytest.approx(per_date.quantile(0.10))
+    assert dist["p90"] == pytest.approx(per_date.quantile(0.90))
+    assert dist["p10"] < dist["mean"] < dist["p90"]
+
+
+def test_excess_distribution_empty_frame_is_nan_not_crash():
+    empty = pd.DataFrame(columns=["symbol", "as_of_date", "signal",
+                                  "fwd_return", "excess_return"])
+    dist = excess_distribution(empty)
+    assert dist["n_dates"] == 0
+    assert np.isnan(dist["mean"])
 
 
 def test_ic_summary_reports_per_year_folds():

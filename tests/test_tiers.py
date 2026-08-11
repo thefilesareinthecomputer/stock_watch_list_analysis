@@ -38,6 +38,37 @@ def test_every_tier_change_is_a_recorded_event():
             assert event["trial_count_at_decision"] > 0
 
 
+def test_calls_config_matches_ruled_defaults():
+    calls = load_registry()["calls"]
+    assert calls["enter_percentile"] == 0.90
+    assert calls["exit_percentile"] == 0.50
+    assert calls["haircut"] == 0.5
+    assert calls["first_round_month"] == "2026-08"  # prospective, no backfill
+    assert calls["drift"] == {"below_mean_rounds": 5, "below_p10_rounds": 3,
+                              "fold_t_bar": 2.0}
+
+
+def test_malformed_calls_block_fails_loudly(tmp_path):
+    import json
+    base = load_registry()
+    for calls in (
+        None,                                              # block missing
+        {"enter_percentile": 0.5, "exit_percentile": 0.9,  # inverted hysteresis
+         "haircut": 0.5,
+         "drift": {"below_mean_rounds": 5, "below_p10_rounds": 3,
+                   "fold_t_bar": 2.0}},
+        {"enter_percentile": 0.9, "exit_percentile": 0.5,  # drift incomplete
+         "haircut": 0.5, "drift": {"below_mean_rounds": 5}},
+    ):
+        broken = dict(base, calls=calls)
+        if calls is None:
+            del broken["calls"]
+        path = tmp_path / "registry.json"
+        path.write_text(json.dumps(broken))
+        with pytest.raises(ValueError):
+            load_registry(str(path))
+
+
 def test_scored_variant_contains_only_scored_signals():
     variant = scored_variant(load_registry())
     names = [c["name"] for c in variant["components"]]

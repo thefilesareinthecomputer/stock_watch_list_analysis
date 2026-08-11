@@ -263,8 +263,20 @@ Not yet built. Constraints that must hold when it is.
 
 Databricks Free Edition, serverless only, daily quota. `environment_version "3"`
 (Python 3.12.3) pins numpy below 2 via pyarrow 15. Job dependencies are pinned
-to versions the base image tolerates. Free Edition specifics that break builds
-are enumerated in CLAUDE.md.
+to versions the base image tolerates. Specifics that break builds:
+
+1. `__file__` undefined - `spark_python_task` runs via `exec()`. Use
+   `try/except` + `os.getcwd()` fallback.
+2. `spark.createDataFrame(pandas_df)` fails (PySpark Connect ChunkedArray
+   bug). Build Row-based with string dates + SQL `CAST`.
+3. DBFS disabled - no temp writes to `/tmp`. Row-based approach only.
+4. `environment_version` must be `"3"` (not `"3.1"`). Valid: 1-5.
+5. Serverless only, daily quota limits. No classic compute.
+6. Declare deps in `environments.spec.dependencies` in `databricks.yml`.
+7. yfinance >= 0.2.51 returns multi-level columns even for one ticker -
+   `droplevel("Ticker")`.
+8. No `Adj Close` - `auto_adjust=True` is the default; `close` IS the
+   adjusted close.
 
 **Known scaling limit.** `build_silver_signals.py` collects all silver prices to
 the driver and builds rows via `iterrows` - roughly 1.3M rows at 318 symbols
