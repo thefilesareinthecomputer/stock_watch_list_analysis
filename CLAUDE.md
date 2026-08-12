@@ -33,6 +33,7 @@ uv run python scripts/evaluate.py --candidates  # walk-forward verdict on candid
 uv run python scripts/ic_decay.py               # IC by 1-12 month horizon
 uv run python scripts/validate_calls.py         # call state machine replay
 uv run python scripts/rebalance.py              # settle -> report -> emit call round
+uv run python scripts/backfill_universe.py      # broad universe + line of sight (monthly)
 uv run pytest tests/test_engine_parity.py -q    # same SQL, both engines
 ```
 EDGAR needs a contact User-Agent: `EDGAR_USER_AGENT` in `.env`, falling back to

@@ -40,6 +40,10 @@ from common.config import _parse_tickers  # noqa: E402 - one parser, no drift
 TARGET = os.path.join(ROOT, "src", "common", "tickers.txt")
 CACHE = os.path.join(ROOT, "src", "common", ".tickers_validated.json")
 MIGRATIONS = os.path.join(ROOT, "src", "common", "ticker_migrations.json")
+# The removal queue: dead tickers found by `check` persist here (gitignored -
+# it names watchlist symbols) until the user updates WATCHLIST and reseeds,
+# so a dead ticker survives the terminal scrollback.
+DEAD = os.path.join(ROOT, "src", "common", ".tickers_dead.json")
 CACHE_DAYS = 30
 CHUNK = 50
 
@@ -84,20 +88,52 @@ def check(full):
         # flush: this runs for minutes, and piped stdout is block-buffered
         print(f"  checked {min(i + CHUNK, len(todo))}/{len(todo)}", flush=True)
 
+    # A whole batch can fail transiently and report every symbol in it dead
+    # (observed 2026-08-11: seven consecutive live megacaps "returned no
+    # data"). Death is only declared after a single-symbol retry also
+    # returns nothing.
+    confirmed = []
+    for s in bad:
+        close = yf.download(s, period="5d", progress=False,
+                            auto_adjust=True)["Close"]
+        if close.dropna().empty:
+            confirmed.append(s)
+        else:
+            cache[s] = date.today().isoformat()
+    if bad and not confirmed:
+        print(f"  {len(bad)} batch failures all resolved on single retry")
+    bad = confirmed
+
     with open(CACHE, "w") as f:
         json.dump(cache, f, indent=2, sort_keys=True)
 
     if bad:
         _report(bad, symbols)
         sys.exit(1)
+    if os.path.exists(DEAD):
+        os.remove(DEAD)
+        print("removal queue cleared - every ticker resolves again")
     print(f"\nAll {len(symbols)} tickers resolve.")
 
 
 def _report(bad, symbols):
-    """Explain each dead symbol from ticker_migrations.json, and print the
-    corrected list ready to paste into WATCHLIST (dotenv and repo secret)."""
+    """Explain each dead symbol from ticker_migrations.json, write the
+    removal queue, and print the corrected list ready to paste into
+    WATCHLIST (dotenv and repo secret)."""
     with open(MIGRATIONS) as f:
         known = json.load(f)
+
+    queue = {s: {"detected": date.today().isoformat(),
+                 "mapped": s in known,
+                 "successor": known.get(s, {}).get("successor"),
+                 "reason": known.get(s, {}).get(
+                     "reason", "UNMAPPED - research and add to "
+                               "ticker_migrations.json")}
+             for s in sorted(bad)}
+    with open(DEAD, "w") as f:
+        json.dump(queue, f, indent=2, sort_keys=True)
+        f.write("\n")
+    print(f"\nremoval queue written to {DEAD}")
 
     print(f"\n{len(bad)} of {len(symbols)} returned no data:")
     unmapped = []

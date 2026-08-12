@@ -39,14 +39,24 @@ uv run python scripts/rebalance.py          # settle -> report -> emit
 If `warehouse/` is missing (gitignored): `scripts/backfill.py` then
 `scripts/backfill_fundamentals.py` first (~5 min total).
 
-## Needed from the user
+## Resolved 2026-08-11 (was "needed from the user")
 
-- **Before task 13:** which broad universe(s) - one large-cap tier or several.
+- **Universe ruling:** top 1000 by trailing median dollar volume as a tier
+  TAG over the full ~6.3k common-stock inventory - size never filters, and
+  the `emerging` tag flags small caps surging on momentum or dollar-volume
+  acceleration (the "might get big" screen).
+- **EA is NOT dead:** the earlier failure was yfinance batch flakiness;
+  `watchlist.py check` now retries singles before declaring death, and all
+  324 resolve. Its quote type stays UNKNOWN (treated as equity). Watch for
+  the take-private actually delisting it.
+
+## Needed from the user
 - **XOM predecessor-CIK ruling** (plan.md gotcha 0c).
-- **Stale branch:** `feature/upgrade-stock-pipeline` on origin, superseded -
-  delete or keep.
-- **EA is dead on yfinance** (2026 take-private): run `watchlist.py check`,
-  add it to `ticker_migrations.json`, and update `WATCHLIST`.
+- **Stale branch:** `feature/upgrade-stock-pipeline` on origin, superseded
+  and fully merged (verified zero unique commits) - say the word and it gets
+  `git push origin --delete`.
+- **XOM predecessor-CIK:** recommend merging the predecessor history
+  (~15 lines in edgar.py + refetch); XOM is momentum-only in v2 until then.
 
 ## Open
 

@@ -86,24 +86,10 @@ def _fetch(batch, start):
     return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--years", type=int, help="window instead of full history")
-    parser.add_argument("--limit", type=int, help="only the first N symbols")
-    args = parser.parse_args()
-
-    start = HISTORY_START_DATE
-    if args.years:
-        start = str((pd.Timestamp.today() - pd.DateOffset(years=args.years)).date())
-
-    symbols = sorted(set(TICKERS) | set(BENCHMARK_TICKERS))
-    if args.limit:
-        symbols = symbols[:args.limit]
-
-    os.makedirs(os.path.dirname(WAREHOUSE), exist_ok=True)
-    con = duckdb.connect(WAREHOUSE)
+def backfill_prices(con, symbols, start):
+    """Fetch and store raw history for symbols; idempotent per (symbol,
+    window). Returns (rows_inserted, missing_symbols)."""
     con.execute(SCHEMA)
-
     run_id, ingest_ts = new_run_id(), now_ts()
     total, missing = 0, []
 
@@ -137,6 +123,26 @@ def main():
 
         print(f"  {min(i + CHUNK, len(symbols))}/{len(symbols)} symbols, "
               f"{total} rows", flush=True)
+    return total, missing
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--years", type=int, help="window instead of full history")
+    parser.add_argument("--limit", type=int, help="only the first N symbols")
+    args = parser.parse_args()
+
+    start = HISTORY_START_DATE
+    if args.years:
+        start = str((pd.Timestamp.today() - pd.DateOffset(years=args.years)).date())
+
+    symbols = sorted(set(TICKERS) | set(BENCHMARK_TICKERS))
+    if args.limit:
+        symbols = symbols[:args.limit]
+
+    os.makedirs(os.path.dirname(WAREHOUSE), exist_ok=True)
+    con = duckdb.connect(WAREHOUSE)
+    total, missing = backfill_prices(con, symbols, start)
 
     fetched = ensure_quote_types(con, symbols)
     if fetched:

@@ -116,8 +116,15 @@ def main():
     args = parser.parse_args()
 
     con = duckdb.connect(WAREHOUSE)
-    symbols = [r[0] for r in con.execute(
-        "SELECT DISTINCT symbol FROM bronze_prices ORDER BY symbol").fetchall()]
+    # The tracked set comes from config, not DISTINCT bronze_prices: the
+    # broad-universe backfill (task 13) banks full history for top-N names
+    # in bronze_prices too, and the pandas indicator battery over all of
+    # them would turn this build's ~2 minutes into ~10.
+    from common.config import TICKERS, BENCHMARK_TICKERS
+    tracked = set(TICKERS) | set(BENCHMARK_TICKERS)
+    present = {r[0] for r in con.execute(
+        "SELECT DISTINCT symbol FROM bronze_prices").fetchall()}
+    symbols = sorted(tracked & present)
     if args.limit:
         symbols = symbols[:args.limit]
 
