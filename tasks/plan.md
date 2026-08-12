@@ -57,11 +57,20 @@ Specced in `tasks/SPEC-SIGNAL-TIERS.md`. 10b (registry) is done.
     real data; tier membership never touches a tracked file (fixture-only
     tests). Held tier does NOT gate call emission - it is an overlay.
 
-13. **Line of sight - broad universe(s) ranked continuously.** Rule-based
-    top-N by dollar volume, watchlist and held tier as tags on top -> verify:
-    a symbol can be ranked without being tracked; the watchlist's position
-    within the broader universe is queryable. Breaks the self-selection
-    feedback loop; also un-pollutes the low-vol measurement (gotcha 0d).
+13. **Line of sight - machinery BUILT 2026-08-11, data load in flight.**
+    Ruled: top 1000 by trailing median dollar volume as a tier TAG over the
+    full ~6.3k common-stock inventory; size never filters; `emerging` flags
+    small caps surging on 12-1 momentum or dollar-volume acceleration
+    (floors: $1 price, $200k median daily value). Built: `common/listings.py`
+    (NASDAQ Trader inventory), `common/universe.py` (resumable batch-committed
+    2y window, PIT membership events, gold_line_of_sight),
+    `scripts/backfill_universe.py` (monthly cadence). The ~6.3k-symbol window
+    fetch runs multi-hour against yfinance throttling and survives
+    sleep/kills - rerun resumes at the gap. On completion verify: membership
+    events written, line-of-sight rows ~= inventory, sane emerging list,
+    full history banked for tier members. Full-depth scoring of the broad
+    tier (indicators + EDGAR at 1000-symbol scale) remains open - ties into
+    L5/P4.
 
 14. **Promotion - expand the tracking list.** Candidates from 13 meeting the
     profitability criteria promoted as explicit recorded events (symbol, date,

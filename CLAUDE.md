@@ -70,6 +70,6 @@ reads the env var first.
 
 ## Code size - track after major changes to prevent bloat
 ```bash
-find src   -name "*.py" -exec wc -l {} +   # ~6128 across 48 files
-find tests -name "*.py" -exec wc -l {} +   # ~4893 across 30 files
+find src   -name "*.py" -exec wc -l {} +   # ~6599 across 51 files
+find tests -name "*.py" -exec wc -l {} +   # ~5203 across 33 files
 ```

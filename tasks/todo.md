@@ -24,10 +24,17 @@ post-mortems. Replay validation green (spread positive 16/17 years @126,
 turnover 5.3% vs 50% bound). Rulings recorded in
 `tasks/SPEC-BUY-SELL-CALLS.md`. 356 tests.
 
-**NEXT ACTION: run `uv run python scripts/rebalance.py` after the 2026-08-31
-close** (backfill + build_local first so silver reaches Aug 31). That emits
-the first prospective round and starts the paper clock. Running it earlier is
-safe - it refuses backdated vintages by design.
+**Task 13 machinery is also built** (registry of what and how: plan.md task
+13); the ~6.3k-symbol broad window fetch was in flight at session close -
+if dead, `uv run python scripts/backfill_universe.py` resumes at the gap
+(caffeinate + lid open; sleep kills it). Verify on completion: membership
+events, line-of-sight rows ~= inventory, emerging list, banked histories.
+
+**The 2026-08-31 first round is AUTOMATED**: durable scheduled task
+`ab4a0af4` (.claude/scheduled_tasks.json) fires Aug 31 5:41pm with the full
+ritual (backfill -> fundamentals -> build_local -> rebalance). Manual
+fallback: run those four in order after the close. Running rebalance earlier
+is safe - it refuses backdated vintages by design.
 
 ```bash
 uv run pytest tests/ -q                     # 356 passing
@@ -72,7 +79,10 @@ If `warehouse/` is missing (gitignored): `scripts/backfill.py` then
 
 ## Deferred, not blocking
 
-- Sharadar (paid) for delisted history - only when backtest levels matter.
+- Sharadar: agreed worth buying (2026-08-11 ruling; bundle from ~$29/mo at
+  sharadar.com) once the universe refresh is routine - fixes both delisted
+  history (survivorship) and the yfinance bulk-fetch throttling. Deferred
+  until then, not until "backtest levels matter" as previously stated.
 - Congressional trades stay display-only; FRED/Fama-French stay on Databricks
   as context/attribution - none of them touch a rank.
 - Theme/cohort aggregation rejected 2026-08-11: ticker-level, objective data
