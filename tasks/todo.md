@@ -57,7 +57,26 @@ If `warehouse/` is missing (gitignored): `scripts/backfill.py` then
   324 resolve. Its quote type stays UNKNOWN (treated as equity). Watch for
   the take-private actually delisting it.
 
+## Queued next (2026-08-12 close)
+
+- **Full-dataset validation** (user interest confirmed): re-run the whole
+  harness - signals, EDGAR backfill for ~790 tier members, forward
+  returns, evaluate + ic_decay - over the banked 1,050-symbol universe.
+  Fixes self-selection, NOT survivorship (still today's survivors; levels
+  stay biased until Sharadar). Research run, ~30 min, all trials logged.
+- **Task 14 - promotion**: recorded, reversible moves from the emerging
+  screen into full tracking, with a demotion path.
+- Screens vs calls discipline (restated 2026-08-12): emerging/deteriorating
+  are UNVALIDATED visibility screens; only the v2 composite emits calls.
+
 ## Needed from the user
+
+- **Loss-harvest screen** (designed, blocked on data): only brokerage
+  accounts qualify (Roth losses are tax-dead; today's overlap of
+  deteriorating and brokerage is GDS + MP). To build it, extend
+  `knowledge/POSITIONS.md` brokerage lots to `SYMBOL QTY BASIS ACQUIRED`;
+  the screen then flags below-basis + held-past-threshold + wash-sale
+  reminder.
 - **XOM predecessor-CIK ruling** (plan.md gotcha 0c).
 - **Stale branch:** `feature/upgrade-stock-pipeline` on origin, superseded
   and fully merged (verified zero unique commits) - say the word and it gets
