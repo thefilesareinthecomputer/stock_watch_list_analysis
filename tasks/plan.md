@@ -57,20 +57,20 @@ Specced in `tasks/SPEC-SIGNAL-TIERS.md`. 10b (registry) is done.
     real data; tier membership never touches a tracked file (fixture-only
     tests). Held tier does NOT gate call emission - it is an overlay.
 
-13. **Line of sight - machinery BUILT 2026-08-11, data load in flight.**
-    Ruled: top 1000 by trailing median dollar volume as a tier TAG over the
-    full ~6.3k common-stock inventory; size never filters; `emerging` flags
-    small caps surging on 12-1 momentum or dollar-volume acceleration
-    (floors: $1 price, $200k median daily value). Built: `common/listings.py`
-    (NASDAQ Trader inventory), `common/universe.py` (resumable batch-committed
-    2y window, PIT membership events, gold_line_of_sight),
-    `scripts/backfill_universe.py` (monthly cadence). The ~6.3k-symbol window
-    fetch runs multi-hour against yfinance throttling and survives
-    sleep/kills - rerun resumes at the gap. On completion verify: membership
-    events written, line-of-sight rows ~= inventory, sane emerging list,
-    full history banked for tier members. Full-depth scoring of the broad
-    tier (indicators + EDGAR at 1000-symbol scale) remains open - ties into
-    L5/P4.
+13. **Line of sight - COMPLETE 2026-08-12.** Top 1000 by trailing median
+    dollar volume as a tier TAG over the 6,264-stock inventory; size never
+    filters. `emerging` = top-decile 12-1 momentum AND top-decile
+    dollar-volume acceleration, EACH with absolute confirmation (rising;
+    volume above its year), floors $1 / $200k - a bear market empties the
+    tag by construction (test-pinned). `deteriorating` = down over 3m, 6m
+    AND 12m (absolute) - the sell-side alert, joined into
+    gold_held_positions and printed by build_local; covers held ETFs and
+    funds that calls never touch. Verified live: 6,330 ranked, 152
+    emerging, 1,000-member tier, full 2010+ history banked (bronze_prices
+    3.66M rows / 1,050 symbols), 10 held names flagged deteriorating.
+    Refresh monthly with the rebalance (~30-60 min; resumable across
+    midnight). Full-depth scoring of the broad tier (indicators + EDGAR at
+    1000-symbol scale) remains open - ties into L5/P4.
 
 14. **Promotion - expand the tracking list.** Candidates from 13 meeting the
     profitability criteria promoted as explicit recorded events (symbol, date,

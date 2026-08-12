@@ -82,6 +82,16 @@ def test_fetch_is_incremental_and_resumes_after_a_kill(monkeypatch):
                        today=today)
     assert fetched == [["DIE"]]
 
+    # The kill can span midnight (it did, twice): a next-day rerun still
+    # skips recent symbols, while a rerun past the resume window refetches.
+    fetched.clear()
+    fetch_broad_window(con, ["AAA", "BBB", "DIE"], fetch=fetch_retry,
+                       today=today + datetime.timedelta(days=1))
+    assert fetched == []
+    fetch_broad_window(con, ["AAA"], fetch=fetch_retry,
+                       today=today + datetime.timedelta(days=30))
+    assert fetched == [["AAA"]]
+
 
 def test_rank_dollar_volume_orders_by_median_traded_value():
     top = rank_dollar_volume(_con(BASE), top_n=2)
@@ -124,6 +134,42 @@ def test_line_of_sight_keeps_small_caps_and_tags_emerging():
     assert emerging == 1
     assert bool(by["MID"]["is_watchlist"]) and bool(by["BIG"]["is_held"])
     assert bool(by["BIG"]["is_top_n"]) and not bool(by["ZIP"]["is_top_n"])
+
+
+def test_emerging_is_empty_in_a_bear_market_not_a_permanent_decile():
+    # Every stock declining: relative top-deciles still exist, but the
+    # absolute confirmations (rising, volume building) empty the tag.
+    bear = {sym: (start, start * 0.6, vol)
+            for sym, (start, _, vol) in BASE.items()}
+    con = _con(bear)
+    update_membership(con, rank_dollar_volume(con, top_n=2))
+    total, emerging = build_line_of_sight(con, watchlist=[], held=[])
+    assert total == 11
+    assert emerging == 0
+    # ...and the sell-side mirror fires: everything is down 3m, 6m and 12m.
+    falling = con.execute("SELECT COUNT(*) FROM gold_line_of_sight "
+                          "WHERE deteriorating").fetchone()[0]
+    assert falling == 11
+
+
+def test_deteriorating_needs_all_three_horizons_down():
+    # Flat names never deteriorate; a recent-recovery name (down on the
+    # year, up over 3 months) does not either.
+    con = duckdb.connect(":memory:")
+    rows = []
+    dates = pd.bdate_range(end="2026-08-10", periods=260)
+    for i, date in enumerate(dates):
+        rows.append(("VEE", date.date(),                 # V-shape: crashed,
+                     10.0 - 6.0 * min(i, 200) / 200      # then recovering
+                     + 3.0 * max(i - 200, 0) / 59, 50_000))
+    con.execute("CREATE TABLE bronze_prices_broad (symbol VARCHAR, "
+                "date DATE, close DOUBLE, volume BIGINT)")
+    con.executemany("INSERT INTO bronze_prices_broad VALUES (?, ?, ?, ?)",
+                    rows)
+    build_line_of_sight(con, watchlist=[], held=[])
+    row = con.execute("SELECT ret_3m > 0, ret_12m < 0, deteriorating "
+                      "FROM gold_line_of_sight").fetchone()
+    assert row == (True, True, False)
 
 
 def test_line_of_sight_survives_symbols_with_short_history():

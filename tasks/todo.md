@@ -24,11 +24,11 @@ post-mortems. Replay validation green (spread positive 16/17 years @126,
 turnover 5.3% vs 50% bound). Rulings recorded in
 `tasks/SPEC-BUY-SELL-CALLS.md`. 356 tests.
 
-**Task 13 machinery is also built** (registry of what and how: plan.md task
-13); the ~6.3k-symbol broad window fetch was in flight at session close -
-if dead, `uv run python scripts/backfill_universe.py` resumes at the gap
-(caffeinate + lid open; sleep kills it). Verify on completion: membership
-events, line-of-sight rows ~= inventory, emerging list, banked histories.
+**Task 13 is COMPLETE and verified** (plan.md task 13 for the full record):
+6,330 ranked, 1,000-member tier, 152 emerging (absolute-confirmed
+shortlist), 10 held names flagged deteriorating (down 3/6/12 months - the
+sell-side alert). Refresh `backfill_universe.py` monthly with the
+rebalance; resumable across midnight.
 
 **The 2026-08-31 first round is AUTOMATED**: durable scheduled task
 `ab4a0af4` (.claude/scheduled_tasks.json) fires Aug 31 5:41pm with the full

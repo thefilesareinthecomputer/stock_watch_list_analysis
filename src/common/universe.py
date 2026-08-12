@@ -22,11 +22,16 @@ BROAD_TIER = "broad_top_n"
 BROAD_WINDOW_DAYS = 730          # ~2 trading years: enough for 12-1 momentum
 FETCH_BATCH = 100
 
-# Emerging-tag floors: enough liquidity to be tradeable at all, low enough
-# to keep genuine small caps. Visible constants, not buried judgment.
+# Emerging-tag rules: relative rank alone is NOT a signal - the top decile
+# of a cross-section always holds ~10% of the universe, bull or crash, so
+# each leg also demands ABSOLUTE confirmation (actually rising, volume
+# actually building). In a bear market the tag correctly shrinks toward
+# zero. Floors keep it tradeable. Visible constants, not buried judgment.
 MIN_PRICE = 1.0                  # no sub-dollar pennies
 MIN_DOLLAR_VOLUME = 200_000      # median daily traded value, 63 sessions
-EMERGING_PERCENTILE = 0.90
+EMERGING_PERCENTILE = 0.90       # relative bar, both legs
+MIN_MOMENTUM = 0.0               # 12-1 return must be positive
+MIN_DV_ACCELERATION = 1.0        # recent $vol must exceed the year's
 
 
 BROAD_SCHEMA = """
@@ -37,14 +42,22 @@ BROAD_SCHEMA = """
 """
 
 
+# A symbol fetched within this many days counts as done when resuming: an
+# interrupted run often spans midnight (both 2026-08-11 kills did), and an
+# exact same-day check would restart a 6k-symbol fetch from zero. Well
+# under the monthly refresh cadence, so a real refresh still refetches all.
+RESUME_MAX_AGE_DAYS = 5
+
+
 def fetch_broad_window(con, symbols, days=BROAD_WINDOW_DAYS, fetch=None,
-                       today=None):
+                       today=None, resume_max_age=RESUME_MAX_AGE_DAYS):
     """Rolling adjusted window for all symbols -> bronze_prices_broad.
 
     Written INCREMENTALLY, one batch at a time, and resumable: symbols
-    already stamped with today's `_fetched_at` are skipped, so a killed or
-    crashed run (a ~6k-symbol fetch takes an hour and yfinance chokes
-    under way - both observed 2026-08-11) loses one batch, not the run.
+    fetched within `resume_max_age` days are skipped, so a killed or
+    crashed run (sleep, throttling - a ~6k-symbol fetch takes hours and
+    was killed twice on 2026-08-11) loses one batch, not the run, even
+    across midnight.
 
     auto_adjust=True is fine HERE and only here: rows are replaced on
     every refresh, so yfinance's history rewriting cannot corrupt anything
@@ -54,13 +67,14 @@ def fetch_broad_window(con, symbols, days=BROAD_WINDOW_DAYS, fetch=None,
     con.execute(BROAD_SCHEMA)
     today = today or pd.Timestamp.today().date()
     start = (pd.Timestamp(today) - pd.Timedelta(days=days)).date()
+    cutoff = (pd.Timestamp(today) - pd.Timedelta(days=resume_max_age)).date()
     done = {r[0] for r in con.execute(
         "SELECT DISTINCT symbol FROM bronze_prices_broad "
-        "WHERE _fetched_at = ?", [today]).fetchall()}
+        "WHERE _fetched_at > ?", [cutoff]).fetchall()}
     todo = [s for s in symbols if s not in done]
     if done:
-        print(f"  resuming: {len(done)} symbols already fetched today",
-              flush=True)
+        print(f"  resuming: {len(done)} symbols fetched within "
+              f"{resume_max_age} days", flush=True)
 
     total = 0
     for i in range(0, len(todo), FETCH_BATCH):
@@ -177,9 +191,11 @@ def build_line_of_sight(con, watchlist, held):
     SQL-computed price signals only - the pandas indicator battery would
     turn a 6,000-symbol build into an hour. 12-1 momentum and dollar-volume
     acceleration are the "might get big" signals; `emerging` flags
-    below-tier names in the top decile of either, above the penny/illiquid
-    floors. Watchlist/held tags come from the private config at build time
-    and exist only in the gitignored warehouse.
+    below-tier names in the top decile of BOTH, each with absolute
+    confirmation (rising, volume building), above the penny/illiquid
+    floors - so the list is a shortlist that shrinks in a bear market,
+    not a permanent decile. Watchlist/held tags come from the private
+    config at build time and exist only in the gitignored warehouse.
     """
     members = current_members(con)
     con.register("incoming_tags", pd.DataFrame({
@@ -203,6 +219,15 @@ def build_line_of_sight(con, watchlist, held):
                    MAX(CASE WHEN rn = 21 THEN close END)
                        / NULLIF(MAX(CASE WHEN rn = 252 THEN close END), 0)
                        - 1 AS mom_12_1,
+                   MAX(CASE WHEN rn = 1 THEN close END)
+                       / NULLIF(MAX(CASE WHEN rn = 63 THEN close END), 0)
+                       - 1 AS ret_3m,
+                   MAX(CASE WHEN rn = 1 THEN close END)
+                       / NULLIF(MAX(CASE WHEN rn = 126 THEN close END), 0)
+                       - 1 AS ret_6m,
+                   MAX(CASE WHEN rn = 1 THEN close END)
+                       / NULLIF(MAX(CASE WHEN rn = 252 THEN close END), 0)
+                       - 1 AS ret_12m,
                    MEDIAN(CASE WHEN rn <= 63 THEN dv END) AS dollar_volume_63d,
                    MEDIAN(CASE WHEN rn <= 21 THEN dv END)
                        / NULLIF(MEDIAN(CASE WHEN rn <= 252 THEN dv END), 0)
@@ -220,6 +245,11 @@ def build_line_of_sight(con, watchlist, held):
             LEFT JOIN incoming_tags t USING (symbol)
         )
         SELECT symbol, as_of_date, close, mom_12_1, mom_pct,
+               ret_3m, ret_6m, ret_12m,
+               -- The sell-side mirror of emerging, and deliberately
+               -- ABSOLUTE: lower than 3, 6, and 12 months ago is steady
+               -- decline whatever the rest of the market is doing.
+               (ret_3m < 0 AND ret_6m < 0 AND ret_12m < 0) AS deteriorating,
                dollar_volume_63d, dv_acceleration, dv_accel_pct,
                COALESCE(is_watchlist, FALSE) AS is_watchlist,
                COALESCE(is_held, FALSE) AS is_held,
@@ -227,8 +257,10 @@ def build_line_of_sight(con, watchlist, held):
                (NOT COALESCE(is_top_n, FALSE)
                 AND close >= {MIN_PRICE}
                 AND dollar_volume_63d >= {MIN_DOLLAR_VOLUME}
-                AND (mom_pct >= {EMERGING_PERCENTILE}
-                     OR dv_accel_pct >= {EMERGING_PERCENTILE}))
+                AND mom_pct >= {EMERGING_PERCENTILE}
+                AND mom_12_1 > {MIN_MOMENTUM}
+                AND dv_accel_pct >= {EMERGING_PERCENTILE}
+                AND dv_acceleration > {MIN_DV_ACCELERATION})
                    AS emerging
         FROM ranked
     """)

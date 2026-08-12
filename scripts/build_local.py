@@ -175,6 +175,12 @@ def main():
               f"{len(untracked)} held-unscored (promotion candidates)")
         if untracked:
             print(f"  held but untracked: {', '.join(untracked)}")
+        falling = [r[0] for r in con.execute(
+            "SELECT symbol FROM gold_held_positions "
+            "WHERE deteriorating ORDER BY ret_12m").fetchall()]
+        if falling:
+            print(f"  DETERIORATING (down 3m, 6m and 12m - consider "
+                  f"selling): {', '.join(falling)}")
 
     rows, syms, lo, hi = con.execute(
         "SELECT COUNT(*), COUNT(DISTINCT symbol), MIN(as_of_date), "

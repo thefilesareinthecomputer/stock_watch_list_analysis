@@ -98,9 +98,10 @@ def build_held_table(con, positions):
             "WHERE table_name = ?", [table]).fetchone()[0]
 
     con.register("incoming_positions", pd.DataFrame(positions))
-    rank_join = call_join = ""
+    rank_join = call_join = sight_join = ""
     rank_cols, call_col = "NULL AS composite_rank, NULL AS composite_score", \
         "NULL AS call"
+    sight_cols = "NULL AS deteriorating, NULL AS ret_3m, NULL AS ret_12m"
     if _has("gold_watchlist_ranked_v2"):
         rank_cols = "r.composite_rank, r.composite_score"
         rank_join = "LEFT JOIN gold_watchlist_ranked_v2 r USING (symbol)"
@@ -111,6 +112,11 @@ def build_held_table(con, positions):
                 SELECT symbol, call FROM gold_calls
                 WHERE as_of_date = (SELECT MAX(as_of_date) FROM gold_calls)
             ) c USING (symbol)"""
+    if _has("gold_line_of_sight"):
+        # The sell-side alert: absolute steady decline (down over 3, 6 and
+        # 12 months), covering held ETFs and funds that calls never touch.
+        sight_cols = "l.deteriorating, l.ret_3m, l.ret_12m"
+        sight_join = "LEFT JOIN gold_line_of_sight l USING (symbol)"
     con.execute(f"""
         CREATE OR REPLACE TABLE gold_held_positions AS
         WITH held AS (
@@ -122,10 +128,11 @@ def build_held_table(con, positions):
         SELECT held.symbol, held.accounts, held.total_quantity,
                EXISTS (SELECT 1 FROM silver_signals s
                        WHERE s.symbol = held.symbol) AS tracked,
-               {rank_cols}, {call_col}
+               {rank_cols}, {call_col}, {sight_cols}
         FROM held
         {rank_join}
         {call_join}
+        {sight_join}
         ORDER BY tracked DESC, composite_rank NULLS LAST, symbol
     """)
     con.unregister("incoming_positions")

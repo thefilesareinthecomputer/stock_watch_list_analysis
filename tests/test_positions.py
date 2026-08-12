@@ -107,6 +107,21 @@ def test_held_table_joins_rank_and_call_untracked_gets_nulls():
     assert list(df["symbol"])[:2] == ["AAA", "BBB"]
 
 
+def test_held_table_carries_the_deteriorating_alert():
+    con = _warehouse()
+    con.execute("CREATE TABLE gold_line_of_sight (symbol VARCHAR, "
+                "deteriorating BOOLEAN, ret_3m DOUBLE, ret_12m DOUBLE)")
+    con.execute("INSERT INTO gold_line_of_sight VALUES "
+                "('AAA', TRUE, -0.12, -0.35), ('BBB', FALSE, 0.05, 0.20)")
+    build_held_table(con, parse_positions(FIXTURE))
+    df = con.execute("SELECT symbol, deteriorating FROM gold_held_positions"
+                     ).df()
+    by = dict(zip(df["symbol"], df["deteriorating"]))
+    assert bool(by["AAA"]) is True     # steady decliner surfaces
+    assert bool(by["BBB"]) is False
+    assert pd.isna(by["CCC"])          # no broad data: honest null
+
+
 def test_held_table_works_without_rank_or_call_tables():
     con = _warehouse()
     build_held_table(con, parse_positions(FIXTURE))

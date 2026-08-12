@@ -64,6 +64,20 @@ RENAMES = {
 }
 
 
+def _symbol_frame(raw, symbol):
+    """One symbol's single-level frame from a download result.
+
+    yfinance >= 0.2.51 returns MULTI-LEVEL columns even for a one-ticker
+    request (CLAUDE-era gotcha 7), so select by ticker level whenever the
+    columns are multi - a batch of exactly one symbol crashed the top-1000
+    banking on its final batch (726 % 25 == 1) before this check existed.
+    Raises KeyError when the symbol is absent.
+    """
+    if isinstance(raw.columns, pd.MultiIndex):
+        return raw[symbol]
+    return raw
+
+
 def _fetch(batch, start):
     """Download a chunk and return one long-format frame."""
     raw = yf.download(batch, start=start, auto_adjust=False, actions=True,
@@ -74,7 +88,7 @@ def _fetch(batch, start):
     frames = []
     for symbol in batch:
         try:
-            sub = raw[symbol] if len(batch) > 1 else raw
+            sub = _symbol_frame(raw, symbol)
         except KeyError:
             continue
         sub = sub.dropna(how="all")
