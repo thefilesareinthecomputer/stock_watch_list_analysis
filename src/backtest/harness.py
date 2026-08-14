@@ -48,7 +48,9 @@ CAVEATS = """\
 CAVEATS (properties of the data, not removable by engineering):
   - Survivorship: the universe is today's survivors; levels are biased up
     and apparent persistence is manufactured. Compare variants, not levels.
-  - The watchlist is self-selected: a rank is "best of what was already
-    liked" until the rule-based universe lands (parent spec P2).
+  - Universe selection is forward-looking in backtests: the broad tier was
+    chosen by TODAY'S dollar volume and applied across history (one
+    membership snapshot so far; PIT reconstruction begins 2026-08).
+    Historical IC and excess are inflated by it.
   - No go-live threshold comes from these numbers. Evidence for real money
     is the forward paper track (SPEC-RECOMMENDATION-ENGINE)."""

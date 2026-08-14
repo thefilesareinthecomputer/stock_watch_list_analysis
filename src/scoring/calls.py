@@ -186,11 +186,16 @@ def read_rounds(path=CALLS_LOG):
 
 
 def latest_calls(rounds):
-    """symbol -> call state after the most recent round, for the next
-    round's prior_calls. Empty when no round exists."""
-    if not rounds:
-        return {}
-    return {c["symbol"]: c["call"] for c in rounds[-1]["calls"]}
+    """symbol -> call state folded across ALL rounds oldest-first, for the
+    next round's prior_calls. A symbol absent from a round (Yahoo hole,
+    tier churn) KEEPS its state - a gap, never a reset - matching
+    simulate_calls; reading only the last round would let a held name
+    re-enter as a fresh buy with no sell ever recorded."""
+    state = {}
+    for r in rounds:
+        for c in r["calls"]:
+            state[c["symbol"]] = c["call"]
+    return state
 
 
 def emit_round(round_entry, path=CALLS_LOG):

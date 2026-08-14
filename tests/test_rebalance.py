@@ -11,7 +11,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 import duckdb
 import pytest
 
-from rebalance import due_round_date, run_rebalance
+from rebalance import due_round_date, off_cycle_round_date, run_rebalance
 from scoring.calls import emit_round, read_rounds
 from scoring.tiers import load_registry
 
@@ -60,13 +60,22 @@ def _decay_file(tmp_path):
     return str(path)
 
 
-def _run(con, tmp_path, today=date(2026, 8, 5), registry=None):
+def _run(con, tmp_path, today=date(2026, 8, 5), registry=None,
+         off_cycle=False):
     return run_rebalance(
         con, registry or _registry(), today,
         calls_path=str(tmp_path / "calls_log.jsonl"),
         report_dir=str(tmp_path / "post_mortem"),
         decay_path=_decay_file(tmp_path),
-        trial_log=str(tmp_path / "trial_log.jsonl"))
+        trial_log=str(tmp_path / "trial_log.jsonl"),
+        off_cycle=off_cycle)
+
+
+def _authorize(registry, vintage):
+    registry["events"] = registry.get("events", []) + [
+        {"date": "2026-08-12", "action": "authorize_off_cycle",
+         "vintage": vintage, "reason": "test"}]
+    return registry
 
 
 def test_first_run_emits_and_reports_nothing_to_grade(tmp_path):
@@ -133,3 +142,73 @@ def test_month_end_evening_emits_todays_round():
     round_date, _ = due_round_date(con, _registry()["calls"],
                                    date(2026, 8, 31))
     assert round_date == "2026-08-31"
+
+
+def _mid_month_warehouse(vintage="2026-08-04"):
+    con = _warehouse()
+    for i in range(12):
+        con.execute("INSERT INTO silver_signals VALUES (?, ?, 0.0, ?)",
+                    [f"S{i:02d}", vintage, i * 10.0])
+        con.execute("INSERT INTO gold_candidate_signals VALUES "
+                    "(?, ?, ?, 0.1, 0.1)", [f"S{i:02d}", vintage, i * 0.01])
+    return con
+
+
+def test_off_cycle_refused_without_authorization_event(tmp_path):
+    status = _run(_mid_month_warehouse(), tmp_path, off_cycle=True)
+    assert status["emitted"] is False
+    assert "authorize_off_cycle" in status["reason"]
+    assert read_rounds(str(tmp_path / "calls_log.jsonl")) == []
+
+
+def test_off_cycle_emits_latest_vintage_when_authorized(tmp_path):
+    registry = _authorize(_registry(), "2026-08-04")
+    status = _run(_mid_month_warehouse(), tmp_path, registry=registry,
+                  off_cycle=True)
+    assert status["emitted"] is True
+    assert status["round_date"] == "2026-08-04"
+    assert status["session_coverage"] == (12, 12)
+    rounds = read_rounds(str(tmp_path / "calls_log.jsonl"))
+    assert rounds[0]["off_cycle"] is True
+
+
+def test_off_cycle_rerun_is_a_noop(tmp_path):
+    con = _mid_month_warehouse()
+    registry = _authorize(_registry(), "2026-08-04")
+    _run(con, tmp_path, registry=registry, off_cycle=True)
+    status = _run(con, tmp_path, registry=registry, off_cycle=True)
+    assert status["emitted"] is False
+    assert len(read_rounds(str(tmp_path / "calls_log.jsonl"))) == 1
+
+
+def test_off_cycle_authorization_must_name_the_vintage():
+    con = _mid_month_warehouse()
+    registry = _authorize(_registry(), "2026-08-03")  # wrong date
+    round_date, reason = off_cycle_round_date(con, registry)
+    assert round_date is None and "authorize_off_cycle" in reason
+
+
+def test_off_cycle_still_refuses_backdated_vintage():
+    con = _mid_month_warehouse()
+    registry = _authorize(_registry(first_round_month="2026-09"),
+                          "2026-08-04")
+    round_date, reason = off_cycle_round_date(con, registry)
+    assert round_date is None and "prospectively" in reason
+
+
+def test_off_cycle_state_carries_into_month_end_round(tmp_path):
+    con = _mid_month_warehouse()
+    registry = _authorize(_registry(), "2026-08-04")
+    _run(con, tmp_path, registry=registry, off_cycle=True)
+    con.execute("DELETE FROM backtest_forward_returns")  # nothing gradeable
+    for i in range(12):
+        con.execute("INSERT INTO silver_signals VALUES (?, '2026-08-31', "
+                    "0.0, ?)", [f"S{i:02d}", i * 10.0])
+        con.execute("INSERT INTO gold_candidate_signals VALUES "
+                    "(?, '2026-08-31', ?, 0.1, 0.1)", [f"S{i:02d}", i * 0.01])
+    status = _run(con, tmp_path, today=date(2026, 8, 31), registry=registry)
+    assert status["emitted"] is True and status["round_date"] == "2026-08-31"
+    rounds = read_rounds(str(tmp_path / "calls_log.jsonl"))
+    top = [c for c in rounds[1]["calls"] if c["symbol"] == "S11"][0]
+    assert top["prior_call"] == "buy"  # entered off-cycle, not reset
+    assert top["call"] == "hold"

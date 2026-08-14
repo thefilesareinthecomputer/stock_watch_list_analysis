@@ -36,6 +36,10 @@ src/common/.tickers_validated.json
 src/common/.tickers_dead.json
 # Buy/sell call record — append-only evidence, names watchlist symbols
 calls_log.jsonl
+# Trade journal - real fills and seeded lots, never committed
+trades.jsonl
+# Decision reports - name symbols and held positions
+reports/
 
 # Claude Code — per-device, not shared
 .claude/inbox/

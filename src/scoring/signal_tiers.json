@@ -79,6 +79,14 @@
      "from": "scored", "to": "monitored", "trial_count_at_decision": 17,
      "reason": "Mislabelled quality measure; measured nothing."},
     {"date": "2026-08-11", "action": "initial_calls_config",
-     "detail": "Task 11 (SPEC-BUY-SELL-CALLS): hysteresis 0.90 enter / 0.50 exit, expectation haircut 0.5 (McLean-Pontiff midpoint), drift suggestions at 5 settlements below haircut mean, 3 below p10, fold-t bar 2.0. First round 2026-08 month-end, prospective - no backfilled vintages, per user ruling 2026-08-11. Revisable only by recorded event."}
+     "detail": "Task 11 (SPEC-BUY-SELL-CALLS): hysteresis 0.90 enter / 0.50 exit, expectation haircut 0.5 (McLean-Pontiff midpoint), drift suggestions at 5 settlements below haircut mean, 3 below p10, fold-t bar 2.0. First round 2026-08 month-end, prospective - no backfilled vintages, per user ruling 2026-08-11. Revisable only by recorded event."},
+    {"date": "2026-08-12", "action": "universe_validation",
+     "detail": "Broad-universe walk-forward over 1,038 banked symbols (2010-2026, 185 monthly dates, trials 48-50 plus decay run): composite IC 0.0360 t 4.43 @126, folds positive 14/17 years, negatives only the documented momentum-crash years (2016/2018/2020). Passes the t>=3.0 decision rule of SPEC-FIRST-ACTIONABLE-ROUND - the call universe becomes the broad banked set, watchlist and held tags ride on top. Fixes self-selection; survivorship stands until Sharadar."},
+    {"date": "2026-08-12", "action": "authorize_off_cycle",
+     "vintage": "2026-08-10",
+     "reason": "SPEC-FIRST-ACTIONABLE-ROUND user ruling 2026-08-12: one off-cycle round ahead of the Aug 31 cadence so the first actionable decision carries a durable, gradeable record. Vintage is 2026-08-10, not 08-11: Yahoo serves no 08-11 bar for 79 symbols (27 of them held), so 08-10 is the last session every banked symbol has - a consistent snapshot beats a fresher, holed one."},
+    {"date": "2026-08-13", "action": "correction",
+     "amends": "universe_validation 2026-08-12",
+     "detail": "Supervisor review findings, recorded because events are append-only. (1) The broad walk-forward applied TODAY'S tier membership across 2010-2026 - forward-looking universe selection, a distinct and stronger bias than survivorship; universe_membership holds one snapshot, so PIT reconstruction begins 2026-08, and the t 4.43 is inflated by selection. Direction of error is safe for prospective grading: expectations are biased UP, so drift detection fires early, not late. (2) Decile shape at 126 is U-shaped: bottom decile +9.2 percent vs roughly 3 for deciles 1-8, monotonicity 0.44; the top-decile bet stands (+13.9) but shape is decision-relevant by the gross_profitability precedent and rides every future settlement."}
   ]
 }

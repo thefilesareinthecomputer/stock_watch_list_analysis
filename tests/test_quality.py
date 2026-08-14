@@ -12,6 +12,7 @@ from src.common.quality import (
     check_source_event_ts_before_ingest_ts,
     check_bronze_prices,
     check_silver_prices,
+    completed_session_cutoff,
 )
 
 
@@ -119,3 +120,19 @@ class TestCheckSilverPrices:
         })
         issues = check_silver_prices(df)
         assert any("duplicate" in i.lower() for i in issues)
+
+
+class TestCompletedSessionCutoff:
+    def test_pre_close_yields_yesterday(self):
+        from datetime import date, datetime
+        from zoneinfo import ZoneInfo
+        now = datetime(2026, 8, 12, 3, 0,
+                       tzinfo=ZoneInfo("America/New_York"))
+        assert completed_session_cutoff(now) == date(2026, 8, 11)
+
+    def test_post_close_yields_today(self):
+        from datetime import date, datetime
+        from zoneinfo import ZoneInfo
+        now = datetime(2026, 8, 12, 16, 45,
+                       tzinfo=ZoneInfo("America/New_York"))
+        assert completed_session_cutoff(now) == date(2026, 8, 12)

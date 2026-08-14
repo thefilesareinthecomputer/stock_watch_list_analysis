@@ -32,7 +32,8 @@ uv run python scripts/build_local.py            # silver + gold + forward return
 uv run python scripts/evaluate.py --candidates  # walk-forward verdict on candidates
 uv run python scripts/ic_decay.py               # IC by 1-12 month horizon
 uv run python scripts/validate_calls.py         # call state machine replay
-uv run python scripts/rebalance.py              # settle -> report -> emit call round
+uv run python scripts/rebalance.py              # settle -> report -> emit call round (--off-cycle needs a registry event)
+uv run python scripts/decide.py                 # private decision report from the latest round
 uv run python scripts/backfill_universe.py      # broad universe + line of sight (monthly)
 uv run pytest tests/test_engine_parity.py -q    # same SQL, both engines
 ```
@@ -49,6 +50,8 @@ so parity there is by construction. SQL that must run on both engines goes throu
 | `src/common/tickers.txt` | The real watchlist | Yes - `watchlist.py seed` |
 | `warehouse/` | Local DuckDB | Yes - `backfill.py`, ~2 min |
 | `calls_log.jsonl` | Buy/sell call record (append-only evidence) | **No** |
+| `trades.jsonl` | Trade journal (real fills + seeded lots) | **No** |
+| `reports/` | Decision/weekly reports (name positions) | Yes - `decide.py` |
 | `knowledge/` | Research and KB, incl. `POSITIONS.md` (held positions) | **No** |
 | `_relay.md` | Handoff scratch file, bidirectional | No |
 
@@ -70,6 +73,6 @@ reads the env var first.
 
 ## Code size - track after major changes to prevent bloat
 ```bash
-find src   -name "*.py" -exec wc -l {} +   # ~6599 across 51 files
-find tests -name "*.py" -exec wc -l {} +   # ~5203 across 33 files
+find src   -name "*.py" -exec wc -l {} +   # ~6974 across 52 files
+find tests -name "*.py" -exec wc -l {} +   # ~5808 across 36 files
 ```

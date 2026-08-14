@@ -184,6 +184,21 @@ def test_emit_round_is_first_write_wins(tmp_path):
     assert latest_calls(read_rounds(path))["S11"] == "buy"
 
 
+def test_latest_calls_carries_state_across_a_round_gap():
+    # A symbol absent from one round (Yahoo hole, tier churn) keeps its
+    # state instead of resetting to none - the live path must match
+    # simulate_calls, or a held name re-enters as a fresh buy with no
+    # sell ever recorded.
+    rounds = [
+        {"calls": [{"symbol": "A", "call": "buy"},
+                   {"symbol": "B", "call": "none"}]},
+        {"calls": [{"symbol": "B", "call": "none"}]},  # A missing
+    ]
+    state = latest_calls(rounds)
+    assert state["A"] == "buy" and state["B"] == "none"
+    assert latest_calls([]) == {}
+
+
 def test_gold_calls_rebuilds_identically_from_the_log(tmp_path):
     path = str(tmp_path / "calls_log.jsonl")
     emit_round(_round(DATES[0]), path=path)

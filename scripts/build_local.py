@@ -1,7 +1,9 @@
 """Build local silver and gold from the DuckDB warehouse.
 
-    uv run python scripts/build_local.py             # whole universe
+    uv run python scripts/build_local.py             # tracked set, ~2 min
     uv run python scripts/build_local.py --limit 10  # smoke test
+    uv run python scripts/build_local.py --universe  # every banked symbol,
+                                                     # ~10 min (validation runs)
 
 Runs the SAME logic as Databricks, not a reimplementation of it:
 
@@ -38,6 +40,7 @@ from common.indicators import build_signal_series  # noqa: E402
 from common.positions import (  # noqa: E402
     build_held_table, check_held_freshness, held_symbols, load_positions,
 )
+from common.trades import load_trades, reconcile  # noqa: E402
 from scoring.calls import CALLS_LOG, load_gold_calls  # noqa: E402
 from scoring.candidates import build_candidate_signals  # noqa: E402
 from scoring.components import percentile_sql  # noqa: E402
@@ -46,12 +49,13 @@ from scoring.tiers import load_registry, rank_latest  # noqa: E402
 WAREHOUSE = os.path.join(ROOT, "warehouse", "market.duckdb")
 
 
-def build_signals(con, symbols):
+def build_signals(con, symbols, as_of=None):
     frames, adj_frames = [], []
     for i, symbol in enumerate(symbols, 1):
         raw = con.execute(
             "SELECT date, open, high, low, close, volume, dividend, split_ratio "
-            "FROM bronze_prices WHERE symbol = ? ORDER BY date", [symbol]
+            "FROM bronze_prices WHERE symbol = ? AND date <= ? ORDER BY date",
+            [symbol, as_of or "9999-12-31"]
         ).df()
         if len(raw) < 200:  # indicators need ~200 sessions of warmup
             continue
@@ -113,23 +117,35 @@ def build_gold(con):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--limit", type=int)
+    parser.add_argument("--universe", action="store_true",
+                        help="build over every banked symbol, not just the "
+                             "tracked set (broad validation and tier-wide "
+                             "calls, SPEC-FIRST-ACTIONABLE-ROUND)")
+    parser.add_argument("--as-of", dest="as_of",
+                        help="cap the build at this date (YYYY-MM-DD). For "
+                             "an upstream data hole covering a subset of "
+                             "symbols: capping at the last date everyone "
+                             "has keeps the snapshot consistent instead of "
+                             "failing the held-freshness gate")
     args = parser.parse_args()
 
     con = duckdb.connect(WAREHOUSE)
     # The tracked set comes from config, not DISTINCT bronze_prices: the
     # broad-universe backfill (task 13) banks full history for top-N names
     # in bronze_prices too, and the pandas indicator battery over all of
-    # them would turn this build's ~2 minutes into ~10.
+    # them would turn this build's ~2 minutes into ~10. --universe accepts
+    # that cost deliberately.
     from common.config import TICKERS, BENCHMARK_TICKERS
     tracked = set(TICKERS) | set(BENCHMARK_TICKERS)
     present = {r[0] for r in con.execute(
         "SELECT DISTINCT symbol FROM bronze_prices").fetchall()}
-    symbols = sorted(tracked & present)
+    symbols = sorted(present) if args.universe else sorted(tracked & present)
     if args.limit:
         symbols = symbols[:args.limit]
 
-    print(f"building signals for {len(symbols)} symbols")
-    signals, adjusted = build_signals(con, symbols)
+    print(f"building signals for {len(symbols)} symbols"
+          + (f" as of {args.as_of}" if args.as_of else ""))
+    signals, adjusted = build_signals(con, symbols, as_of=args.as_of)
     if signals.empty:
         sys.exit("no signals produced")
 
@@ -181,6 +197,11 @@ def main():
         if falling:
             print(f"  DETERIORATING (down 3m, 6m and 12m - consider "
                   f"selling): {', '.join(falling)}")
+
+    # Trade journal (SPEC-FIRST-ACTIONABLE-ROUND): mismatches warn, never
+    # fail - POSITIONS.md stays the holdings source of truth.
+    for warning in reconcile(load_trades(), positions):
+        print(f"  JOURNAL MISMATCH: {warning}")
 
     rows, syms, lo, hi = con.execute(
         "SELECT COUNT(*), COUNT(DISTINCT symbol), MIN(as_of_date), "

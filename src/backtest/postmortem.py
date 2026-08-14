@@ -97,7 +97,37 @@ def drift_state(settlements, drift_cfg):
             "suggestions": suggestions}
 
 
-def write_report(report_date, settlements, drift, directory=REPORT_DIR):
+def journal_agreement(round_entry, trades):
+    """Aggregate agreement between journaled actions and the latest
+    round's calls - counts only, symbol-free, safe for tracked reports
+    (SPEC-FIRST-ACTIONABLE-ROUND "Month-close comparison").
+
+    Trades dated after the round's vintage are classified: buys into
+    buy/hold names and sells out of sell names follow the calls; buys
+    into sell names and sells out of buy/hold names contradict them;
+    everything else - symbols the round never scored, and seeds - is
+    unprompted. Machine-vs-machine changes need no section here: each
+    emitted round already records prior_call next to call.
+    """
+    calls = {c["symbol"]: c["call"] for c in round_entry["calls"]}
+    counts = {"followed": 0, "contradicted": 0, "unprompted": 0}
+    for t in trades:
+        if t["seed"] or t["date"] <= round_entry["as_of_date"]:
+            continue
+        call = calls.get(t["symbol"])
+        if t["side"] == "buy":
+            bucket = ("followed" if call in ("buy", "hold") else
+                      "contradicted" if call == "sell" else "unprompted")
+        else:
+            bucket = ("followed" if call == "sell" else
+                      "contradicted" if call in ("buy", "hold") else
+                      "unprompted")
+        counts[bucket] += 1
+    return {"round": round_entry["as_of_date"], **counts}
+
+
+def write_report(report_date, settlements, drift, directory=REPORT_DIR,
+                 agreement=None):
     """Write YYYY-MM-DD.{json,md}; a no-op if the date already has one.
 
     Returns True when written. Immutability mirrors emit_round: the first
@@ -112,16 +142,26 @@ def write_report(report_date, settlements, drift, directory=REPORT_DIR):
     payload = {"report_date": report_date, "n_vintages_settled": n_vintages,
                "settlements": settlements, "drift": drift,
                "notes": [NOISE_NOTE, SURVIVORSHIP_NOTE]}
+    if agreement:
+        payload["journal_agreement"] = agreement
     with open(json_path, "w") as f:
         json.dump(payload, f, indent=2, sort_keys=True)
         f.write("\n")
     with open(os.path.join(directory, f"{report_date}.md"), "w") as f:
-        f.write(_markdown(report_date, settlements, drift, n_vintages))
+        f.write(_markdown(report_date, settlements, drift, n_vintages,
+                          agreement))
     return True
 
 
-def _markdown(report_date, settlements, drift, n_vintages):
+def _markdown(report_date, settlements, drift, n_vintages, agreement=None):
     lines = [f"# Post-mortem {report_date}", ""]
+    if agreement:
+        lines += [f"## Journal agreement (actions since round "
+                  f"{agreement['round']})", "",
+                  f"- followed the call: {agreement['followed']}",
+                  f"- contradicted the call: {agreement['contradicted']}",
+                  f"- unprompted (unscored symbols): "
+                  f"{agreement['unprompted']}", ""]
     if not settlements:
         lines.append("No vintage has a closed window yet - nothing to grade.")
     else:

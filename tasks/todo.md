@@ -5,104 +5,76 @@ to state + next action + pointer. Full records: `tasks/completed/`.
 
 ## Start here - next session
 
-**Goal: every symbol gets a trustworthy buy or sell call at pipeline runtime.**
-A buy means "most likely to outperform the benchmark over 126 sessions" - a
-relative claim; below the index is failure.
+**State: the engine is LIVE.** First actionable round emitted 2026-08-13
+(vintage 2026-08-10, off-cycle by recorded event, 978 scored / 98 buys over
+the validated broad universe, frozen expectations). Decision report:
+`reports/decision_2026-08-12.md` (private). 425 tests passing. Full record:
+`completed/plan-completed-2026-08-13.md`.
 
-Read in this order: `tasks/plan.md` (ordered tasks + gotchas), `SPEC.md`
-(invariants), `tasks/SPEC-SIGNAL-TIERS.md` (tiers and calls).
+Read in this order: `tasks/plan.md` (tasks + gotchas, note new 0f-0h),
+`tasks/SPEC-EVENT-AWARENESS.md` (next build), `SPEC.md` (invariants).
 
-**State: tasks 11 AND 12 are BUILT - the call machinery is live and waiting
-for the calendar, and the held tier rides on top.** Task 12: `common.positions`
-parses `knowledge/POSITIONS.md` into warehouse-only `gold_held_positions`
-(72 tracked, 1 unscored on real data); stale held names fail the build.
-
-Task 11: State machine + hysteresis, durable `calls_log.jsonl` ->
-`gold_calls`, frozen expectations with source hash and 0.5 haircut,
-settle->report->emit orchestrator, drift detection with immutable
-post-mortems. Replay validation green (spread positive 16/17 years @126,
-turnover 5.3% vs 50% bound). Rulings recorded in
-`tasks/SPEC-BUY-SELL-CALLS.md`. 356 tests.
-
-**Task 13 is COMPLETE and verified** (plan.md task 13 for the full record):
-6,330 ranked, 1,000-member tier, 152 emerging (absolute-confirmed
-shortlist), 10 held names flagged deteriorating (down 3/6/12 months - the
-sell-side alert). Refresh `backfill_universe.py` monthly with the
-rebalance; resumable across midnight.
-
-**The 2026-08-31 first round is AUTOMATED**: durable scheduled task
-`ab4a0af4` (.claude/scheduled_tasks.json) fires Aug 31 5:41pm with the full
-ritual (backfill -> fundamentals -> build_local -> rebalance). Manual
-fallback: run those four in order after the close. Running rebalance earlier
-is safe - it refuses backdated vintages by design.
+**NOTHING IS COMMITTED.** Two days of work (first-actionable-round build,
+supervisor fixes, event-awareness spec, docs) sit uncommitted on `develop`.
+First action: commit and push via the repo-device-sync ritual.
 
 ```bash
-uv run pytest tests/ -q                     # 356 passing
-uv run python scripts/build_local.py        # full local rebuild, ~3 min
-uv run python scripts/validate_calls.py     # state machine replay
-uv run python scripts/rebalance.py          # settle -> report -> emit
+uv run pytest tests/ -q                    # 425 passing
+uv run python scripts/decide.py            # regenerate the decision report
+uv run python scripts/rebalance.py         # monthly round (Aug 31 scheduled)
+uv run python scripts/build_local.py --universe --as-of DATE  # broad rebuild
 ```
-
-If `warehouse/` is missing (gitignored): `scripts/backfill.py` then
-`scripts/backfill_fundamentals.py` first (~5 min total).
-
-## Resolved 2026-08-11 (was "needed from the user")
-
-- **Universe ruling:** top 1000 by trailing median dollar volume as a tier
-  TAG over the full ~6.3k common-stock inventory - size never filters, and
-  the `emerging` tag flags small caps surging on momentum or dollar-volume
-  acceleration (the "might get big" screen).
-- **EA is NOT dead:** the earlier failure was yfinance batch flakiness;
-  `watchlist.py check` now retries singles before declaring death, and all
-  324 resolve. Its quote type stays UNKNOWN (treated as equity). Watch for
-  the take-private actually delisting it.
-
-## Queued next (2026-08-12 close)
-
-- **Full-dataset validation** (user interest confirmed): re-run the whole
-  harness - signals, EDGAR backfill for ~790 tier members, forward
-  returns, evaluate + ic_decay - over the banked 1,050-symbol universe.
-  Fixes self-selection, NOT survivorship (still today's survivors; levels
-  stay biased until Sharadar). Research run, ~30 min, all trials logged.
-- **Task 14 - promotion**: recorded, reversible moves from the emerging
-  screen into full tracking, with a demotion path.
-- Screens vs calls discipline (restated 2026-08-12): emerging/deteriorating
-  are UNVALIDATED visibility screens; only the v2 composite emits calls.
 
 ## Needed from the user
 
-- **Loss-harvest screen** (designed, blocked on data): only brokerage
-  accounts qualify (Roth losses are tax-dead; today's overlap of
-  deteriorating and brokerage is GDS + MP). To build it, extend
-  `knowledge/POSITIONS.md` brokerage lots to `SYMBOL QTY BASIS ACQUIRED`;
-  the screen then flags below-basis + held-past-threshold + wash-sale
-  reminder.
-- **XOM predecessor-CIK ruling** (plan.md gotcha 0c).
-- **Stale branch:** `feature/upgrade-stock-pipeline` on origin, superseded
-  and fully merged (verified zero unique commits) - say the word and it gets
-  `git push origin --delete`.
-- **XOM predecessor-CIK:** recommend merging the predecessor history
-  (~15 lines in edgar.py + refetch); XOM is momentum-only in v2 until then.
+- **Journal basis seeds**: prefilled template in `_relay.md`; fill
+  price/date per brokerage lot, say "seed ready". Until then the harvest
+  screen has nothing to chew (GDS and MP are deteriorating brokerage names,
+  so it likely fires once seeded).
+- **De-risk clause**: five-option decision memo in
+  `knowledge/ABANDONMENT-RULE.md`. Deadline: before the monitor builds or
+  the first system-sleeve buy. Other three clauses ratified 2026-08-12.
+- **XOM predecessor-CIK ruling** (plan.md gotcha 0c): recommend merging
+  predecessor history (~15 lines in edgar.py + refetch); XOM is
+  momentum-only in v2 until then.
+- **Stale branch** `feature/upgrade-stock-pipeline` on origin: verified
+  fully merged; say the word for `git push origin --delete`.
+
+## Queued next
+
+- **Build SPEC-EVENT-AWARENESS Phase W** (weekly review) after Phase 0
+  (abandonment-rule ratification). Supervisor advice on record: ship W,
+  then reassess Phases A/E against real weekly output before building them.
+  Kalshi/Polymarket ToS is an unverified personal-use assumption - check
+  before the Phase E fetcher ships.
+- **Task 14 re-scope**: tier-wide calls made "promotion" about the
+  watchlist overlay, not call eligibility. Re-scope before building.
+
+## Calendar
+
+- **2026-08-31 5:41pm**: scheduled task `ab4a0af4` runs the full ritual
+  (backfill -> fundamentals -> build_local -> rebalance). Post-mortem report
+  will carry the journal-agreement section. Hysteresis state folds across
+  the off-cycle round (fixed 2026-08-13 - state carries through gaps).
+- **~2026-09-09**: first settleable rung (21 sessions) of the 08-10 round.
+  Settlement is automatic at the next rebalance after it closes.
 
 ## Open
 
-1. **L5 blocked by design:** v2 cannot deploy to Databricks until candidate
-   data ships there as load-and-serve tables (EDGAR is local-only today).
-2. **Sector-relative ranking** for value/quality is the flagged candidate-
-   quality fix (SIC stored; GP/A's broken top decile is the motivating case).
-   Decide before parent-spec P4.
-3. **Go-live remains process-gated:** months of immutable paper track, capped
-   allocation, pre-committed abandonment rule - never a backtest threshold.
-   In-sample skill decays 26-58% out of sample; plan accordingly.
-4. **`setup-uv` pinned to exact `v9.0.0`** - will not pick up patches.
+1. **L5 blocked by design**: v2 cannot deploy to Databricks until candidate
+   data ships there as load-and-serve tables (EDGAR is local-only).
+2. **Sector-relative ranking** for value/quality - decide before parent P4.
+   GP/A repeated its broken-decile pattern on the broad universe (trial 49).
+3. **Go-live remains process-gated**: the abandonment rule (drafted) is the
+   pre-commitment; months of immutable paper track before the cap rises.
+4. **Yahoo 08-11 session hole** (gotcha 0g): 79 symbols still lack the bar.
+   If Yahoo heals it, the next monthly build absorbs it; no action needed.
+5. **`setup-uv` pinned to exact `v9.0.0`** - will not pick up patches.
 
 ## Deferred, not blocking
 
-- Sharadar: agreed worth buying (2026-08-11 ruling; bundle from ~$29/mo at
-  sharadar.com) once the universe refresh is routine - fixes both delisted
-  history (survivorship) and the yfinance bulk-fetch throttling. Deferred
-  until then, not until "backtest levels matter" as previously stated.
-- Congressional trades stay display-only; FRED/Fama-French stay on Databricks
-  as context/attribution - none of them touch a rank.
-- Theme/cohort aggregation rejected 2026-08-11: ticker-level, objective data
-  only.
+- Sharadar (~$29/mo): worth buying once universe refresh is routine - fixes
+  delisted history (survivorship) AND the yfinance throttling/holes
+  (gotchas 0f/0g strengthen the case). Ruling 2026-08-11.
+- Congressional trades display-only; FRED/Fama-French context-only on
+  Databricks; theme aggregation rejected 2026-08-11.

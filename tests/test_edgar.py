@@ -8,7 +8,10 @@ import duckdb
 import pandas as pd
 import pytest
 
-from common.edgar import cik_from_atom, extract_facts, upsert_facts, user_agent
+from common.edgar import (
+    cik_from_atom, extract_facts, universe_backfill_targets, upsert_facts,
+    user_agent,
+)
 
 CIK = "0000320193"
 
@@ -150,3 +153,19 @@ def test_user_agent_requires_a_contact(monkeypatch):
     monkeypatch.delenv("ALERT_EMAIL", raising=False)
     with pytest.raises(RuntimeError):
         user_agent()
+
+
+def test_universe_backfill_targets_skips_symbols_with_facts():
+    con = duckdb.connect()
+    con.execute("CREATE TABLE bronze_prices (symbol VARCHAR, date DATE)")
+    con.executemany("INSERT INTO bronze_prices VALUES (?, DATE '2026-01-02')",
+                    [("AAA",), ("BBB",), ("CCC",), ("BBB",)])
+    upsert_facts(con, extract_facts("BBB", CIK, PAYLOAD), "run", "ts")
+    assert universe_backfill_targets(con) == ["AAA", "CCC"]
+
+
+def test_universe_backfill_targets_covers_all_when_no_facts_yet():
+    con = duckdb.connect()
+    con.execute("CREATE TABLE bronze_prices (symbol VARCHAR, date DATE)")
+    con.execute("INSERT INTO bronze_prices VALUES ('AAA', DATE '2026-01-02')")
+    assert universe_backfill_targets(con) == ["AAA"]

@@ -151,9 +151,16 @@ a warehouse silently wrong.
 
 ### 5.3 What a cross-sectional rank means here
 
-Scores are `PERCENT_RANK` within `as_of_date` across the watchlist. The universe
-is self-selected, so a rank is **"best of what was already liked"** and carries
-no claim about the market. Any presentation implying otherwise is wrong.
+Scores are `PERCENT_RANK` within `as_of_date`. Production (v1) ranks the
+watchlist: self-selected, so that rank is **"best of what was already
+liked"** and carries no claim about the market. The local engine (v2, since
+2026-08-13) ranks the rule-based broad universe (~1,000 by trailing dollar
+volume plus the watchlist); its historical results instead carry
+**forward-looking universe selection** - today's membership applied across
+history (one snapshot so far; PIT reconstruction accrues from 2026-08) -
+which inflates backtest levels. Either way a rank is relative: it never
+claims the market itself is worth being in (§7, market state is a separate,
+display-only concern).
 
 ### 5.4 Required additions
 
@@ -163,10 +170,13 @@ goal; build status is tracked in the phase specs, not asserted here long-term.
 - **`gold.recommendations`** - shipped 2026-08-10: append-only, one row per
   symbol per run, first-write-wins per (`as_of_date`, `methodology_version`).
   Never rewritten. The record everything downstream depends on (P1, P5). The
-  local methodology-v2 ranking does not yet have its append-only counterpart;
-  that lands with the buy/sell calls (plan task 11).
-- **`gold.universe_membership`** - symbol, `added_date`, `removed_date`,
-  `removal_reason`, successor symbol. Sourced from `ticker_migrations.json` (P3).
+  local v2 counterpart shipped 2026-08-11/13: durable `calls_log.jsonl`
+  (append-only, first-write-wins per vintage) with `gold_calls` rebuilt
+  from it.
+- **`gold.universe_membership`** - shipped 2026-08-11 (local
+  `universe_membership`): append-only enter/exit events for the computed
+  dollar-volume tier, PIT-reconstructable from 2026-08 onward. Symbol
+  retirements still trace through `ticker_migrations.json` (P3).
 - **`gold.data_quality`** - per run per source: expected vs received symbol
   counts, max date vs last trading day, null rates on scored features. Failing
   it fails the job (P4).
@@ -241,7 +251,10 @@ not as composite components.
 
 ## 7. Decision layer boundaries
 
-Not yet built. Constraints that must hold when it is.
+Built 2026-08-11..13 (calls state machine, frozen expectations,
+settle-before-emit, off-cycle rounds by recorded authorization, trade
+journal, decision report). Position sizing remains unbuilt. The constraints
+below held at build time and must keep holding.
 
 - **Execution assumption.** Data lands ~22:00 ET; the earliest possible action is
   the next open. Every evaluation must fill at the next open with an explicit

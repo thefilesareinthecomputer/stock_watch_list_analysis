@@ -93,6 +93,24 @@ def test_fetch_is_incremental_and_resumes_after_a_kill(monkeypatch):
     assert fetched == [["AAA"]]
 
 
+def test_broad_fetch_drops_partial_bar_for_unfinished_session(monkeypatch):
+    import datetime
+
+    import common.universe as universe
+
+    con = duckdb.connect(":memory:")
+    monkeypatch.setattr(universe, "FETCH_BATCH", 1)
+    frame = pd.DataFrame(
+        {"Close": [10.0, 11.0], "Volume": [1000, 10]},
+        index=pd.DatetimeIndex([pd.Timestamp("2026-08-10"),
+                                pd.Timestamp("2099-01-01")]))
+    fetch_broad_window(con, ["AAA"], fetch=lambda b, s: frame,
+                       today=datetime.date(2026, 8, 11))
+    dates = [r[0] for r in con.execute(
+        "SELECT date FROM bronze_prices_broad").fetchall()]
+    assert dates == [datetime.date(2026, 8, 10)]
+
+
 def test_rank_dollar_volume_orders_by_median_traded_value():
     top = rank_dollar_volume(_con(BASE), top_n=2)
     assert list(top["symbol"]) == ["BIG", "MID"]

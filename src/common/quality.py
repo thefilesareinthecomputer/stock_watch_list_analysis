@@ -24,6 +24,24 @@ from typing import Dict, List, Set, Tuple
 STALE_TOLERANCE = 0.02
 
 
+def completed_session_cutoff(now=None):
+    """Latest date whose US session is certainly complete.
+
+    yfinance serves a partial bar for TODAY when queried while the market
+    is open or pre-market (313 such rows landed in bronze on 2026-08-12
+    from a 3am run and had to be deleted by hand). Any fetch that stores
+    daily bars must drop rows dated after this cutoff: today counts only
+    after 16:30 ET, else yesterday. Weekends need no special case - no
+    rows exist for them.
+    """
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+    now = now or datetime.now(ZoneInfo("America/New_York"))
+    if (now.hour, now.minute) >= (16, 30):
+        return now.date()
+    return now.date() - timedelta(days=1)
+
+
 def last_trading_session(reference: date, calendar: str = "XNYS") -> date:
     """Most recent exchange session on or before `reference`."""
     import exchange_calendars as xc

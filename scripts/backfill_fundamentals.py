@@ -2,6 +2,8 @@
 
     uv run python scripts/backfill_fundamentals.py             # whole watchlist
     uv run python scripts/backfill_fundamentals.py --limit 20  # smoke test
+    uv run python scripts/backfill_fundamentals.py --universe  # banked symbols
+                                                   # without facts (resumable)
 
 Fetches per-CIK companyfacts JSON for every watchlist symbol that resolves to
 an SEC registrant. ETFs and foreign listings without EDGAR filings are
@@ -27,7 +29,8 @@ import requests  # noqa: E402
 from common.config import TICKERS  # noqa: E402
 from common.edgar import (  # noqa: E402
     extract_facts, fetch_companyfacts, fetch_entity, resolve_cik_fallback,
-    resolve_ciks, upsert_entity, upsert_facts, user_agent,
+    resolve_ciks, universe_backfill_targets, upsert_entity, upsert_facts,
+    user_agent,
 )
 from common.run_context import new_run_id, now_ts  # noqa: E402
 
@@ -37,9 +40,18 @@ WAREHOUSE = os.path.join(ROOT, "warehouse", "market.duckdb")
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--limit", type=int, help="only the first N symbols")
+    parser.add_argument("--universe", action="store_true",
+                        help="target banked symbols (bronze_prices) without "
+                             "facts yet, instead of the watchlist")
     args = parser.parse_args()
 
-    symbols = sorted(set(TICKERS))
+    con = duckdb.connect(WAREHOUSE)
+    if args.universe:
+        symbols = universe_backfill_targets(con)
+        print(f"universe mode: {len(symbols)} banked symbols without facts",
+              flush=True)
+    else:
+        symbols = sorted(set(TICKERS))
     if args.limit:
         symbols = symbols[:args.limit]
 
@@ -54,7 +66,6 @@ def main():
     unresolved = [s for s in symbols if s not in ciks]
     resolved = [s for s in symbols if s in ciks]
 
-    con = duckdb.connect(WAREHOUSE)
     run_id, ingest_ts = new_run_id(), now_ts()
     total, empty = 0, []
 

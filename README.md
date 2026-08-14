@@ -29,11 +29,13 @@ always-on compute - which makes it cheap to reproduce and a reasonable
 reference for anyone building a small lakehouse on a budget.
 
 **Status.** The pipeline is stable: 19 tasks, daily on a cron, ~18 minutes a
-run. The *scoring* methodology is mid-redesign and its rankings have not been
-validated against forward returns. Treat the output as a research surface, not
-as advice - see [`SPEC.md`](SPEC.md) for the architecture and
+run. The scoring shown here (methodology v1) is legacy and unvalidated; the
+successor lives in the local-first engine (methodology v2: walk-forward
+validated with stated caveats, emitting recorded monthly call rounds since
+2026-08). The Databricks surface remains a research view, not advice - see
+[`SPEC.md`](SPEC.md) for the architecture and
 [`tasks/SPEC-RECOMMENDATION-ENGINE.md`](tasks/SPEC-RECOMMENDATION-ENGINE.md)
-for where it is going.
+for the program.
 
 <p align="center">
   <img src="static-assets/pipeline-runs.png" alt="Daily job run history in Databricks" width="700"><br>

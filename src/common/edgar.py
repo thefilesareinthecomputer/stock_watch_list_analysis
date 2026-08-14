@@ -204,6 +204,27 @@ def extract_facts(symbol, cik, payload):
     return pd.DataFrame(rows)
 
 
+def universe_backfill_targets(con):
+    """Banked symbols (bronze_prices) with no stored facts yet.
+
+    The resume-safe target list for a universe-wide backfill: a killed run
+    skips everything already landed, and watchlist symbols fetched earlier
+    are never refetched. Symbols that legitimately have no facts (ETFs,
+    foreign listings) reappear on resume; their fetches are cheap misses.
+    """
+    have_facts = con.execute(
+        "SELECT COUNT(*) FROM information_schema.tables "
+        "WHERE table_name = 'bronze_fundamentals'").fetchone()[0]
+    if not have_facts:
+        return [r[0] for r in con.execute(
+            "SELECT DISTINCT symbol FROM bronze_prices ORDER BY symbol"
+        ).fetchall()]
+    return [r[0] for r in con.execute(
+        "SELECT DISTINCT symbol FROM bronze_prices "
+        "WHERE symbol NOT IN (SELECT DISTINCT symbol FROM bronze_fundamentals) "
+        "ORDER BY symbol").fetchall()]
+
+
 def upsert_facts(con, df, run_id, ingest_ts):
     """Idempotent per symbol: delete then insert, same as the price backfill."""
     if df.empty:

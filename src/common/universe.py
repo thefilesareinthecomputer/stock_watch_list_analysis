@@ -102,6 +102,11 @@ def fetch_broad_window(con, symbols, days=BROAD_WINDOW_DAYS, fetch=None,
                     "volume": sub["Volume"].values}))
         if frames:
             frame = pd.concat(frames, ignore_index=True)
+            # Same guard as the evidence backfill: a partial bar for an
+            # unfinished session must not reach the screening table either
+            # (it feeds deteriorating and the harvest price fallback).
+            from common.quality import completed_session_cutoff
+            frame = frame[frame["date"] <= completed_session_cutoff()]
             frame["_fetched_at"] = today
             con.register("incoming_broad", frame)
             # Replace-per-symbol keeps the refresh idempotent while stale

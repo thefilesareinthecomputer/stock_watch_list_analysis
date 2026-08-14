@@ -12,6 +12,14 @@ Shipped 2026-08-10 - record in `completed/plan-completed-2026-08-10.md`:
 P0 (score inversion, immutable snapshot, freshness gate), watchlist merged to
 324, engine parity harness, L1+L2 of the local warehouse.
 
+Shipped 2026-08-13 - record in `completed/plan-completed-2026-08-13.md`:
+first actionable round END TO END (broad EDGAR 980 symbols, broad validation
+passed at t 4.43 @126 -> tier-wide calls, off-cycle round 2026-08-10 emitted:
+978 scored / 98 buys, frozen expectations), trade journal + loss harvest +
+decision report (`scripts/decide.py`), Aug 31 agreement machinery, supervisor
+fixes (state folding, partial-bar guard, coverage warning). 425 tests.
+Specs retired to `completed/`: FIRST-ACTIONABLE-ROUND, BUY-SELL-CALLS.
+
 Shipped 2026-08-11 - record in `completed/plan-completed-2026-08-11.md`:
 EDGAR fundamentals end to end (bronze facts -> PIT silver -> candidate
 signals); L3 evaluation harness (tasks 4-7, all trust checks green); trial log
@@ -75,7 +83,23 @@ Specced in `tasks/SPEC-SIGNAL-TIERS.md`. 10b (registry) is done.
 14. **Promotion - expand the tracking list.** Candidates from 13 meeting the
     profitability criteria promoted as explicit recorded events (symbol, date,
     reason, universe of origin), with a demotion path -> verify: the tracked
-    set is reconstructable at any past date.
+    set is reconstructable at any past date. Partly obsoleted by 15: calls
+    now cover the whole banked tier, so promotion is about the WATCHLIST
+    overlay, not call eligibility - re-scope before building.
+
+15. **First actionable round - SHIPPED 2026-08-13.** Record in
+    `completed/plan-completed-2026-08-13.md`; spec + rulings in
+    `completed/SPEC-FIRST-ACTIONABLE-ROUND-2026-08-13.md`. Operational
+    leftovers live in `todo.md`: journal basis seeds (user), first
+    settlement ~2026-09-09.
+
+16. **Event awareness - SPECCED, not built.** `tasks/SPEC-EVENT-AWARENESS.md`:
+    weekly sell review, display-tier-forever market-state monitor, armed
+    alerts -> off-cycle authorization, claims log, Kalshi+Polymarket weekly
+    pull, EDGAR 8-K watch. Build order W -> M -> A/E; supervisor advice:
+    ship Phase W, then reassess A/E against real weekly output. Phase 0
+    (abandonment rule) is drafted with ONE clause open (de-risk - user
+    deliberating, memo in `knowledge/ABANDONMENT-RULE.md`).
 
 ### Decisions needed before the work reaches them
 
@@ -132,6 +156,29 @@ Specced in `tasks/SPEC-SIGNAL-TIERS.md`. 10b (registry) is done.
    dates with a 12-month window overlap 11/12ths; naive t at 252 read 7.0,
    corrected (yearly folds / non-overlapping windows) ~2-3.4. Judge long
    horizons on fold-level t. Documented in `backtest.metrics.ic_summary`.
+
+0f. **yfinance serves a partial bar for TODAY when queried before the
+   close.** 313 phantom pre-market rows landed in bronze from a 3am run on
+   2026-08-12 and were deleted by hand; both fetch paths now drop rows past
+   `quality.completed_session_cutoff()` (16:30 ET). Any NEW fetch path must
+   apply the same guard - the screening table feeds `deteriorating` and the
+   harvest price fallback, so a partial bar there lies twice.
+
+0g. **Yahoo can miss an entire session for a subset of symbols.** 2026-08-11
+   is absent for 79 symbols (27 held) on BOTH endpoints (download + chart) -
+   PLTR-class names included, so it is an upstream hole, not delistings.
+   Response pattern: pin the round vintage to the last session every banked
+   symbol has (`build_local.py --as-of`), never emit on a holed snapshot;
+   rebalance warns when >2% of banked symbols lack the vintage session.
+
+0h. **The broad backtest carries forward-looking universe selection.**
+   Today's dollar-volume tier membership was applied across 2010-2026 (one
+   membership snapshot exists; PIT reconstruction begins 2026-08). This is
+   distinct from and stronger than survivorship: t 4.43 @126 is inflated by
+   it, and the decile curve is U-shaped (bottom decile +9.2% vs ~3% middle).
+   Recorded as a registry `correction` event; CAVEATS names it. Safe
+   direction for prospective grading - expectations biased UP, drift fires
+   early. Do not quote broad-universe IC/t without this caveat.
 
 1. **Never raise numpy above 1.x in `databricks.yml`.** Serverless
    `environment_version: "3"` ships `pyarrow==15.0.2` (requires numpy<2);
