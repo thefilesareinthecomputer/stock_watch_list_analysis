@@ -173,9 +173,24 @@ candidate earns promotion.
       `results/variants/`; re-runs reproduce files byte for byte.
 - [x] Every variant evaluation logs a trial before its result exists.
 
-### L5 - Promote
+### L5 - Promote — **DEFERRED 2026-08-15**
+Databricks is secondary to operating the engine; nothing ships until the
+weekly/monthly operating loop is routine. Blockers recorded for when this
+revives:
+- Methodology v2 needs EDGAR candidate data on Databricks as load-and-serve
+  tables; no local-to-Databricks data transport exists anywhere in the repo,
+  and Free Edition rules out the DBFS/temp-write paths (SPEC.md §8).
+- The parity claim below was overstated: `tests/test_engine_parity.py` covers
+  the v1 percentile SQL and the snapshot only. The v2 registry-driven SQL
+  (`scoring.variants.component_sql`, `scoring.calls.round_scores`) has no
+  Spark-side parity test, and its dependency chain uses DuckDB-only
+  constructs (`ASOF LEFT JOIN`, `QUALIFY`, `INTERVAL 400 DAY`). Parity must
+  be earned before any v2 SQL reaches Databricks.
+- Two version identifiers need reconciling at promote time:
+  `components.METHODOLOGY_VERSION = "v1"` (production snapshot) vs the
+  registry's `"v2-local"`. Bumping is ask-first per this spec's boundaries.
 - A winning variant bumps `METHODOLOGY_VERSION` and deploys the same SQL to
-  Databricks unchanged, which the parity test already guarantees is safe.
+  Databricks, gated by the parity coverage above.
 
 ## Testing strategy
 

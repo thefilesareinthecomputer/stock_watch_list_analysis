@@ -214,6 +214,13 @@ Promotion requires walk-forward evidence at `t > 3.0` - the higher bar being the
 multiple-testing correction - plus a prospectively logged trial count, plus
 correlation with existing scored signals below a stated threshold. A signal that
 duplicates one already in the composite adds false confidence, not information.
+Demotion is the same rule in reverse and automatic in principle: a scored signal
+whose walk-forward IC turns insignificant returns to `candidate` - recorded,
+dated, reversible.
+
+Both bars are decision rules applied by a human and recorded in the registry's
+event log with their evidence and trial count - not machine-enforced gates. The
+honesty lives in the recording, not in automation.
 
 ### 6.3 Validation holds out time, never symbols
 
@@ -229,7 +236,20 @@ Trial counts are recorded before results are seen. Trials not recorded are trial
 that cannot be counted, and without the count the best of N variants cannot be
 distinguished from the luckiest of N. This is unretrofittable by construction.
 
-Full treatment: `tasks/SPEC-SIGNAL-TIERS.md`.
+Three checks are non-negotiable before any result is believed: **known-answer**
+(the harness run on the benchmark returns ~zero excess), **look-ahead** (shifting
+features forward one day degrades every metric), and **decay** (IC reported by
+horizon, so the forecast window comes from measured half-life, not assumption).
+The forecast window is ruled at **126 sessions**, from the measured decay ladder
+judged on fold-level t after correcting for window-overlap inflation.
+
+Every printed result carries the standing caveat: the universe is survivor- and
+selection-biased, which inflates levels and - worse - manufactures apparent
+persistence. Relative comparison between variants largely survives because the
+bias is common-mode; absolute Sharpe and CAGR do not, and no go-live threshold
+is ever derived from a backtest level.
+
+Full record: `tasks/completed/SPEC-SIGNAL-TIERS-2026-08-15.md`.
 
 ### 6.4 Component design
 
@@ -269,6 +289,19 @@ below held at build time and must keep holding.
   price-derived components with a survivorship asterisk, since fundamentals
   history begins at first ingest. A forward paper-traded track with
   benchmark-relative attribution is the honest evidence.
+- **Hysteresis, not thresholds.** Enter only on a high rank, exit only on a
+  substantially worse one. Cross-sectional percentiles jiggle daily, so a bare
+  threshold generates turnover with no information - and turnover is economic:
+  most anomalies survive costs below roughly 50% one-sided monthly turnover and
+  few survive above it (Novy-Marx & Velikov 2016).
+- **Frozen expectations, human-ratified post-mortems.** Every emitted call
+  carries the decayed walk-forward expectation it will be graded against, frozen
+  at emit. Settlement grades every gradeable vintage against its frozen
+  expectation before a new round may be emitted; cumulative drift produces
+  SUGGESTED registry events with evidence attached, and accepting one is a human
+  act - a dated event plus a methodology version bump. A single-interval miss is
+  noise by construction; "nothing to learn yet" is the expected output most
+  rounds.
 
 ---
 

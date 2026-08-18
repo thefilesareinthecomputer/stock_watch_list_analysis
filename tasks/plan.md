@@ -5,12 +5,20 @@ Active plan and live gotchas only. Finished work lives in `tasks/completed/`.
 ## Active
 
 **Recommendation engine rebuild.** Architecture `SPEC.md`; programme
-`tasks/SPEC-RECOMMENDATION-ENGINE.md`; phase specs `tasks/SPEC-LOCAL-WAREHOUSE.md`
-(L1-L4 done, L5 open) and `tasks/SPEC-SIGNAL-TIERS.md`.
+`tasks/SPEC-RECOMMENDATION-ENGINE.md`; phase spec `tasks/SPEC-LOCAL-WAREHOUSE.md`
+(L1-L4 done, L5 open and deferred - Databricks is secondary to operating the
+engine). Signal tiers retired: `completed/SPEC-SIGNAL-TIERS-2026-08-15.md`.
 
 Shipped 2026-08-10 - record in `completed/plan-completed-2026-08-10.md`:
 P0 (score inversion, immutable snapshot, freshness gate), watchlist merged to
 324, engine parity harness, L1+L2 of the local warehouse.
+
+Shipped 2026-08-16: Phase W weekly review end to end (task 16 below), full
+data refresh through 2026-08-14 (1,037 symbols in silver, broad screen
+6,343 ranked / 152 emerging), fresh decision report, SPEC-SIGNAL-TIERS
+folded into `SPEC.md` and retired to
+`completed/SPEC-SIGNAL-TIERS-2026-08-15.md`, L5 marked deferred with its
+real blockers recorded. 436 tests.
 
 Shipped 2026-08-13 - record in `completed/plan-completed-2026-08-13.md`:
 first actionable round END TO END (broad EDGAR 980 symbols, broad validation
@@ -40,7 +48,8 @@ Commits `7195ab1`, `14fe8ec`, `bf908e0`.
     data (EDGAR) on Databricks; ship as load-and-serve tables, not a port.
 
 **L6 - buy/sell calls, tiering, and discovery**
-Specced in `tasks/SPEC-SIGNAL-TIERS.md`. 10b (registry) is done.
+Specced in `completed/SPEC-SIGNAL-TIERS-2026-08-15.md` (retired 2026-08-15;
+durable essence folded into `SPEC.md` §6.2-6.3 and §7). 10b (registry) is done.
 
 11. **Buy/sell calls with frozen expectations and a human-ratified
     post-mortem.** **Built 2026-08-11** (spec + rulings:
@@ -93,19 +102,35 @@ Specced in `tasks/SPEC-SIGNAL-TIERS.md`. 10b (registry) is done.
     leftovers live in `todo.md`: journal basis seeds (user), first
     settlement ~2026-09-09.
 
-16. **Event awareness - SPECCED, not built.** `tasks/SPEC-EVENT-AWARENESS.md`:
-    weekly sell review, display-tier-forever market-state monitor, armed
-    alerts -> off-cycle authorization, claims log, Kalshi+Polymarket weekly
-    pull, EDGAR 8-K watch. Build order W -> M -> A/E; supervisor advice:
-    ship Phase W, then reassess A/E against real weekly output. Phase 0
-    (abandonment rule) is drafted with ONE clause open (de-risk - user
-    deliberating, memo in `knowledge/ABANDONMENT-RULE.md`).
+16. **Event awareness - Phase W BUILT 2026-08-16.** `scripts/weekly_review.py`
+    + `tests/test_weekly_review.py` (11 fixture tests, one per verdict path):
+    act / too-soon / punt per held name, act only from the four sanctioned
+    sources; exit breach requires the call record in position (buy/hold) -
+    a low-ranked discretionary holding is too-soon, never act (the "no new
+    sell criteria" refusal, pinned by test). State table
+    `weekly_review_state` keyed by review date; same-day re-run idempotent.
+    First real run 2026-08-16: 73 reviewed, 10 act (all deteriorating),
+    23 too-soon, 40 punt. Scheduled Mondays 7:52am CT (harness cron
+    `53403fac`, durable; recurring tasks auto-expire after ~7 days - covers
+    Aug 17 and the final fire, then recreate or run by hand). Phases M/A/E
+    remain per `tasks/SPEC-EVENT-AWARENESS.md`; supervisor advice: reassess
+    against real weekly output. Phase 0 (abandonment rule) still has the
+    de-risk clause open (memo in `knowledge/ABANDONMENT-RULE.md`).
 
 ### Decisions needed before the work reaches them
 
-- **Before task 13:** which broad universe(s), and how many tiers.
 - **Before task 14:** the profitability screen as rules over data we hold;
   promotion automatic or proposed-for-approval.
+- **Combination method** (relocated from the retired SPEC-SIGNAL-TIERS):
+  percentile rank (current, discards magnitude) vs winsorized z-score
+  (preserves it, needs winsorizing or one outlier dominates). Test as
+  variants, never decide by argument.
+- **Weighting** (relocated, same source): the shipped 0.5/0.5 is hand-set;
+  equal vs inverse-volatility never tested as variants.
+- **Correlation threshold for promotion** (relocated, same source): recorded
+  per decision so far (-0.07 accepted, 0.34 rejected as family duplicate)
+  but never stated as a number in the registry. State it before the next
+  promotion ruling.
 - **Before P4 of the parent spec:** sector-relative ranking for value/quality
   (SIC codes now stored in `bronze_entity`) or accept the structural sector
   tilt deliberately. GP/A's broken top decile is the motivating case.

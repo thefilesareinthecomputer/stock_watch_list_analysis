@@ -5,18 +5,19 @@ to state + next action + pointer. Full records: `tasks/completed/`.
 
 ## Start here - next session
 
-**State: the engine is LIVE.** First actionable round emitted 2026-08-13
-(vintage 2026-08-10, off-cycle by recorded event, 978 scored / 98 buys over
-the validated broad universe, frozen expectations). Decision report:
-`reports/decision_2026-08-12.md` (private). 425 tests passing. Full record:
-`completed/plan-completed-2026-08-13.md`.
+**State: the engine is LIVE, weekly cadence running.** First actionable
+round emitted 2026-08-13 (vintage 2026-08-10, off-cycle by recorded event,
+978 scored / 98 buys, frozen expectations). Weekly sell review live
+2026-08-16 (`scripts/weekly_review.py`, Mondays pre-open; first run: 10
+act, all deteriorating). Latest decision report: `reports/` (private,
+regenerate with `decide.py`). 436 tests passing.
 
 Read in this order: `tasks/plan.md` (tasks + gotchas, note new 0f-0h),
-`tasks/SPEC-EVENT-AWARENESS.md` (next build), `SPEC.md` (invariants).
+`tasks/SPEC-EVENT-AWARENESS.md` (Phases M/A/E remain), `SPEC.md` (invariants).
 
-**NOTHING IS COMMITTED.** Two days of work (first-actionable-round build,
-supervisor fixes, event-awareness spec, docs) sit uncommitted on `develop`.
-First action: commit and push via the repo-device-sync ritual.
+Committed and pushed through `6dde1bf` (2026-08-14). Ruling 2026-08-15:
+**Databricks/L5 is secondary** - the priority is operating the engine
+(buys/sells this week, tracked to the Aug 31 rebalance).
 
 ```bash
 uv run pytest tests/ -q                    # 425 passing
@@ -42,16 +43,20 @@ uv run python scripts/build_local.py --universe --as-of DATE  # broad rebuild
 
 ## Queued next
 
-- **Build SPEC-EVENT-AWARENESS Phase W** (weekly review) after Phase 0
-  (abandonment-rule ratification). Supervisor advice on record: ship W,
-  then reassess Phases A/E against real weekly output before building them.
-  Kalshi/Polymarket ToS is an unverified personal-use assumption - check
-  before the Phase E fetcher ships.
+- **Phase W is LIVE** (built 2026-08-16, plan task 16). Reassess Phases
+  M/A/E against real weekly output after two or three reviews - supervisor
+  advice on record. Kalshi/Polymarket ToS is an unverified personal-use
+  assumption - check before the Phase E fetcher ships.
 - **Task 14 re-scope**: tier-wide calls made "promotion" about the
   watchlist overlay, not call eligibility. Re-scope before building.
+- **L5 / Databricks: deferred** (ruling 2026-08-15, blockers recorded in
+  `tasks/SPEC-LOCAL-WAREHOUSE.md` L5).
 
 ## Calendar
 
+- **Mondays 7:52am CT**: weekly review (harness cron `53403fac`, durable).
+  Recurring harness tasks auto-expire after ~7 days - covers 08-17 and one
+  final fire; recreate it or run `scripts/weekly_review.py` by hand after.
 - **2026-08-31 5:41pm**: scheduled task `ab4a0af4` runs the full ritual
   (backfill -> fundamentals -> build_local -> rebalance). Post-mortem report
   will carry the journal-agreement section. Hysteresis state folds across
@@ -67,8 +72,11 @@ uv run python scripts/build_local.py --universe --as-of DATE  # broad rebuild
    GP/A repeated its broken-decile pattern on the broad universe (trial 49).
 3. **Go-live remains process-gated**: the abandonment rule (drafted) is the
    pre-commitment; months of immutable paper track before the cap rises.
-4. **Yahoo 08-11 session hole** (gotcha 0g): 79 symbols still lack the bar.
-   If Yahoo heals it, the next monthly build absorbs it; no action needed.
+4. **Yahoo 08-11 session hole** (gotcha 0g): partly healed - 1,022 banked
+   symbols now carry the bar; 135 (incl. 9 held, among them FBRT, ZTEK,
+   ROIV) still lack it. A single mid-history bar; the held-freshness gate
+   checks the latest session and passes. If Yahoo heals it, a future
+   backfill absorbs it; no action needed.
 5. **`setup-uv` pinned to exact `v9.0.0`** - will not pick up patches.
 
 ## Deferred, not blocking

@@ -34,6 +34,7 @@ uv run python scripts/ic_decay.py               # IC by 1-12 month horizon
 uv run python scripts/validate_calls.py         # call state machine replay
 uv run python scripts/rebalance.py              # settle -> report -> emit call round (--off-cycle needs a registry event)
 uv run python scripts/decide.py                 # private decision report from the latest round
+uv run python scripts/weekly_review.py          # weekly sell review: act/too-soon/punt per held name (Mon pre-open)
 uv run python scripts/backfill_universe.py      # broad universe + line of sight (monthly)
 uv run pytest tests/test_engine_parity.py -q    # same SQL, both engines
 ```
@@ -74,5 +75,5 @@ reads the env var first.
 ## Code size - track after major changes to prevent bloat
 ```bash
 find src   -name "*.py" -exec wc -l {} +   # ~6974 across 52 files
-find tests -name "*.py" -exec wc -l {} +   # ~5808 across 36 files
+find tests -name "*.py" -exec wc -l {} +   # ~6008 across 37 files
 ```
