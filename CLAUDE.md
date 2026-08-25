@@ -35,6 +35,7 @@ uv run python scripts/validate_calls.py         # call state machine replay
 uv run python scripts/rebalance.py              # settle -> report -> emit call round (--off-cycle needs a registry event)
 uv run python scripts/decide.py                 # private decision report from the latest round
 uv run python scripts/weekly_review.py          # weekly sell review: act/too-soon/punt per held name (Mon pre-open)
+uv run python scripts/trade.py buy SYM QTY --account "A"  # record a fill: trades.jsonl + POSITIONS.md together (also sell/seed/show)
 uv run python scripts/backfill_universe.py      # broad universe + line of sight (monthly)
 uv run pytest tests/test_engine_parity.py -q    # same SQL, both engines
 ```
@@ -54,6 +55,7 @@ so parity there is by construction. SQL that must run on both engines goes throu
 | `trades.jsonl` | Trade journal (real fills + seeded lots) | **No** |
 | `reports/` | Decision/weekly reports (name positions) | Yes - `decide.py` |
 | `knowledge/` | Research and KB, incl. `POSITIONS.md` (held positions) | **No** |
+| `tasks/` | Plans and specs (reference held names) | **No** |
 | `_relay.md` | Handoff scratch file, bidirectional | No |
 
 Never echo the contents of these into commit messages, tracked files, or anything
@@ -74,6 +76,6 @@ reads the env var first.
 
 ## Code size - track after major changes to prevent bloat
 ```bash
-find src   -name "*.py" -exec wc -l {} +   # ~6974 across 52 files
-find tests -name "*.py" -exec wc -l {} +   # ~6008 across 37 files
+find src   -name "*.py" -exec wc -l {} +   # ~7022 across 52 files
+find tests -name "*.py" -exec wc -l {} +   # ~6191 across 39 files
 ```

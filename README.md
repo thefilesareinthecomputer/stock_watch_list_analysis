@@ -33,9 +33,8 @@ run. The scoring shown here (methodology v1) is legacy and unvalidated; the
 successor lives in the local-first engine (methodology v2: walk-forward
 validated with stated caveats, emitting recorded monthly call rounds since
 2026-08). The Databricks surface remains a research view, not advice - see
-[`SPEC.md`](SPEC.md) for the architecture and
-[`tasks/SPEC-RECOMMENDATION-ENGINE.md`](tasks/SPEC-RECOMMENDATION-ENGINE.md)
-for the program.
+[`SPEC.md`](SPEC.md) for the architecture; the program's phase specs live
+in the private `tasks/` folder (gitignored, local-only).
 
 <p align="center">
   <img src="static-assets/pipeline-runs.png" alt="Daily job run history in Databricks" width="700"><br>

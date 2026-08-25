@@ -43,6 +43,54 @@ def parse_positions(text):
     return positions
 
 
+def apply_fill(text, account, symbol, delta):
+    """POSITIONS.md text with `delta` shares applied to (account, symbol).
+
+    Buys add to the line (or add a line under the account, creating the
+    account section at the end if absent); sells subtract and drop the
+    line at zero. Selling more than the snapshot holds raises - the
+    snapshot is the holdings source of truth, so a fill that contradicts
+    it is a data error, not something to paper over. Every other line is
+    preserved byte for byte.
+    """
+    symbol = symbol.upper()
+    parse_positions(text)  # validate before touching anything
+    lines = text.splitlines()
+    section = [i for i, l in enumerate(lines)
+               if l.strip().startswith("#")
+               and l.strip().lstrip("#").strip() == account]
+    if not section:
+        if delta < 0:
+            raise ValueError(f"{account} {symbol}: not held, cannot sell")
+        if lines and lines[-1].strip():
+            lines.append("")
+        lines += [f"# {account}", f"{symbol} {delta:g}"]
+        return "\n".join(lines) + "\n"
+    start = section[0] + 1
+    end = next((i for i in range(start, len(lines))
+                if lines[i].strip().startswith("#")), len(lines))
+    for i in range(start, end):
+        parts = lines[i].split()
+        if len(parts) == 2 and parts[0].upper() == symbol:
+            held = float(parts[1])
+            new = held + delta
+            if new < -1e-9:
+                raise ValueError(f"{account} {symbol}: holds {held:g}, "
+                                 f"cannot sell {-delta:g}")
+            if new <= 1e-9:
+                del lines[i]
+            else:
+                lines[i] = f"{symbol} {new:g}"
+            return "\n".join(lines) + "\n"
+    if delta < 0:
+        raise ValueError(f"{account} {symbol}: not held, cannot sell")
+    last = end
+    while last > start and not lines[last - 1].strip():
+        last -= 1
+    lines.insert(last, f"{symbol} {delta:g}")
+    return "\n".join(lines) + "\n"
+
+
 def load_positions(path=POSITIONS_PATH):
     """Positions from disk; empty on machines without the private file."""
     if not os.path.exists(path):

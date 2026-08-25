@@ -22,9 +22,13 @@ app_generated_files/
 warehouse/
 # Research and knowledge base — private, and does not travel between devices
 knowledge/
+# Task plans and specs — reference held names too often to stay public
+tasks/
 # Held positions — real holdings, never committed to a public repo
 POSITIONS.md
 .pytest_cache/
+# Spark test artifact dir - never data we keep
+spark-warehouse/
 notes/
 __archive/
 _relay.md

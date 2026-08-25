@@ -1,9 +1,9 @@
 # SPEC - architecture and first principles
 
 What this system **is**, what it deliberately **is not**, and the invariants that
-must hold. README says how to use it; `tasks/plan.md` holds live gotchas and
-active work. This file is always true to now - completed history does not
-accumulate here.
+must hold. README says how to use it; `tasks/plan.md` (private, local-only
+since 2026-08-23) holds live gotchas and active work. This file is always
+true to now - completed history does not accumulate here.
 
 ---
 
@@ -249,7 +249,8 @@ persistence. Relative comparison between variants largely survives because the
 bias is common-mode; absolute Sharpe and CAGR do not, and no go-live threshold
 is ever derived from a backtest level.
 
-Full record: `tasks/completed/SPEC-SIGNAL-TIERS-2026-08-15.md`.
+Full record: `tasks/completed/SPEC-SIGNAL-TIERS-2026-08-15.md` (private,
+local-only).
 
 ### 6.4 Component design
 
