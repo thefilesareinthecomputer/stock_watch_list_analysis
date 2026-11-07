@@ -36,6 +36,8 @@ uv run python scripts/rebalance.py              # settle -> report -> emit call 
 uv run python scripts/decide.py                 # private decision report from the latest round
 uv run python scripts/weekly_review.py          # weekly sell review: act/too-soon/punt per held name (Mon pre-open)
 uv run python scripts/guard.py                  # daily guard: drawdown/size/stale alerts on every holding (--dry-run, --replay A B)
+uv run python scripts/cadence.py run            # the daily chain launchd runs (backfill -> build -> fresh -> guard), when due
+uv run python scripts/cadence.py install        # print the launchd plist; --yes writes ~/Library/LaunchAgents and loads it
 uv run python scripts/trade.py buy SYM QTY --account "A"  # record a fill: trades.jsonl + POSITIONS.md together (also sell/seed/show)
 uv run python scripts/backfill_universe.py      # broad universe + line of sight (monthly)
 uv run pytest tests/test_engine_parity.py -q    # same SQL, both engines
@@ -55,6 +57,7 @@ so parity there is by construction. SQL that must run on both engines goes throu
 | `calls_log.jsonl` | Buy/sell call record (append-only evidence) | **No** |
 | `trades.jsonl` | Trade journal (real fills + seeded lots) | **No** |
 | `guard_events.jsonl` | Guard alert episodes (fired / rearmed) | No (a fresh log re-fires current alerts once) |
+| `logs/` | Cadence run ledger (`cadence.jsonl`) and step logs | No (run history) |
 | `reports/` | Decision/weekly reports (name positions) | Yes - `decide.py` |
 | `knowledge/` | Research and KB, incl. `POSITIONS.md` (held positions) | **No** |
 | `tasks/` | Plans and specs (reference held names) | **No** |

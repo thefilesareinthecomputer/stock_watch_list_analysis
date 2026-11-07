@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Rendered by `scripts/cadence.py install`; {{ROOT}} and {{UV}} are filled
+     at install time, so no machine path lives in the repo. Fires daily at
+     18:00 local and at load; `cadence.py run` no-ops unless a run is due,
+     and launchd fires a missed run at the next wake. -->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>{{LABEL}}</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/caffeinate</string>
+        <string>-i</string>
+        <string>{{UV}}</string>
+        <string>run</string>
+        <string>python</string>
+        <string>scripts/cadence.py</string>
+        <string>run</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>{{ROOT}}</string>
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>18</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>{{ROOT}}/logs/launchd.log</string>
+    <key>StandardErrorPath</key>
+    <string>{{ROOT}}/logs/launchd.log</string>
+</dict>
+</plist>

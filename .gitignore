@@ -46,6 +46,8 @@ trades.jsonl
 reports/
 # Guard alert episodes - append-only, name held symbols
 guard_events.jsonl
+# Cadence run ledger and step logs - per machine
+logs/
 
 # Claude Code — per-device, not shared
 .claude/inbox/
