@@ -219,14 +219,17 @@ def main():
             "FROM gold_candidate_signals").fetchone()
         print(f"gold_candidate_signals: {c_rows} rows, {c_syms} symbols, "
               f"{c_cov} with earnings yield")
-    print(f"gold_watchlist_ranked: "
+    print(f"gold_watchlist_ranked (v1, Databricks parity only): "
           f"{con.execute('SELECT COUNT(*) FROM gold_watchlist_ranked').fetchone()[0]} rows")
-    print("\ntop 10 by composite_rank:")
-    print(con.execute(
-        "SELECT composite_rank, symbol, ROUND(composite_score,4) AS score, "
-        "ROUND(momentum_pct,3) AS mom, ROUND(risk_pct,3) AS risk, "
-        "ROUND(quality_pct,3) AS qual FROM gold_watchlist_ranked "
-        "ORDER BY composite_rank LIMIT 10").df().to_string(index=False))
+    if has_facts:
+        # v2 is the engine (registry-scored); v1 stays built for parity.
+        print("\ntop 10 by v2 composite_rank:")
+        print(con.execute(
+            "SELECT composite_rank, symbol, ROUND(composite_score,4) AS score, "
+            "ROUND(mom_12_1_pct,3) AS mom, "
+            "ROUND(earnings_yield_pct,3) AS ey "
+            "FROM gold_watchlist_ranked_v2 "
+            "ORDER BY composite_rank LIMIT 10").df().to_string(index=False))
     con.close()
 
 
