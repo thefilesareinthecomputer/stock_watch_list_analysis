@@ -48,7 +48,7 @@ SCHEMA = """
         open DOUBLE,
         high DOUBLE,
         low DOUBLE,
-        close DOUBLE,          -- RAW close, never adjusted
+        close DOUBLE,          -- Yahoo close: split-adjusted, not dividend-adjusted
         adj_close DOUBLE,      -- yfinance's adjusted close, kept for reconciliation
         volume BIGINT,
         dividend DOUBLE,

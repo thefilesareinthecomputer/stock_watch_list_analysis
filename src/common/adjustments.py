@@ -1,7 +1,8 @@
-"""Derive adjusted prices from raw prices plus corporate actions.
+"""Derive adjusted prices from stored closes plus corporate actions.
 
-Bronze stores RAW close plus the dividends and splits that adjust it, never an
-adjusted series. `auto_adjust=True` rescales the entire close history every time
+Bronze stores Yahoo's close (already split-adjusted, verified 2026-11-07) plus
+the dividends and splits, never the dividend-adjusted series. Splits are applied
+only where the data shows the close is raw across them (`_split_is_raw`). `auto_adjust=True` rescales the entire close history every time
 a dividend is paid, so an adjusted series stored as evidence is not stable: a
 score computed last month silently changes this month, and no past
 recommendation can be reproduced.

@@ -12,10 +12,10 @@ Construction notes that carry the correctness:
 
 - ASOF LEFT JOIN, never plain ASOF JOIN: a symbol with no filing before the
   as-of date must appear with nulls, not vanish (plan.md gotcha 0a).
-- Market cap uses the RAW close times a split-adjusted share count. The
-  share count is measured at the filing's cover date, so any split between
-  that date and the as-of date rescales it; without this, a 10-for-1 split
-  understates market cap ten-fold for up to a year.
+- Market cap uses the stored close (Yahoo: split-adjusted to today's share
+  count) times the share count converted to today's terms with the
+  symbol's final cumulative split. Converting with the split as of the
+  scoring date let later splits shift earlier yields (fixed 2026-11-07).
 - Percentiles rank non-null rows only. PERCENT_RANK cannot exclude rows
   from its window, and DuckDB sorts nulls last under ASC, so ranking the
   full set would hand the missing-fundamentals rows the top percentiles.

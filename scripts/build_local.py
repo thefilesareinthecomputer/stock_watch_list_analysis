@@ -13,7 +13,7 @@ Runs the SAME logic as Databricks, not a reimplementation of it:
     string, proven equivalent across engines by tests/test_engine_parity.py.
 
 What legitimately differs from Databricks: prices here are adjusted by our own
-factors derived from raw closes (`common.adjustments`) rather than by yfinance's
+factors derived from the stored closes (`common.adjustments`) rather than by yfinance's
 self-rewriting adj_close, and the scored composite's `value_pct` still comes
 from yfinance P/E, so it degenerates to a constant locally. Both are known and
 documented in tasks/SPEC-LOCAL-WAREHOUSE.md.

@@ -116,8 +116,11 @@ decision, which is what P4 exists to catch.
 **The adjusted-close problem.** `auto_adjust=True` means `close` is
 dividend-and-split adjusted, so the entire history rescales whenever a dividend
 is paid. Values in bronze are therefore not stable over time, which violates P1
-at the source. Either raw close plus explicit adjustment factors must be stored,
-or every derived conclusion must be snapshotted (P1) so the drift is bounded.
+at the source. Either an un-dividend-adjusted close plus explicit adjustment
+factors must be stored, or every derived conclusion must be snapshotted (P1) so
+the drift is bounded. Note: with `auto_adjust=False` Yahoo's close is still
+split-adjusted, so splits are applied only where the data proves the close is
+raw across them, and every build reconciles against Yahoo's own adj_close.
 
 ---
 

@@ -206,10 +206,11 @@ def lot_basis(con, lot, symbol):
     """(per-share basis in today's share terms, splits applied), or
     (None, []) when no price is knowable.
 
-    The basis is the lot's recorded price, else the raw close on its trade
-    date (prices are knowable from dates). A real fill is priced in the
-    shares of its day, so every later split divides it - without that a
-    2-for-1 reads as a 50% loss. Seeds are entered per share AS HELD TODAY
+    The basis is the lot's recorded price, else the stored close on its
+    trade date (prices are knowable from dates; Yahoo's close is already
+    split-adjusted, so it is never divided). A recorded fill is divided by
+    later splits only when it verifiably sits at pre-split terms - without
+    that a 2-for-1 reads as a 50% loss. Seeds are entered per share AS HELD TODAY
     (post-split) and are never adjusted. The splits come back so reports
     can say a split happened, not just absorb it.
     """
