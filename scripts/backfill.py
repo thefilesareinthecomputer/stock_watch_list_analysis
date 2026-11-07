@@ -30,6 +30,7 @@ import pandas as pd  # noqa: E402
 import yfinance as yf  # noqa: E402
 
 from common.config import TICKERS, BENCHMARK_TICKERS, HISTORY_START_DATE  # noqa: E402
+from common.positions import daily_symbols, load_positions  # noqa: E402
 from common.quality import completed_session_cutoff  # noqa: E402
 from common.run_context import new_run_id, now_ts  # noqa: E402
 from common.security import ensure_quote_types  # noqa: E402
@@ -156,7 +157,7 @@ def main():
     if args.years:
         start = str((pd.Timestamp.today() - pd.DateOffset(years=args.years)).date())
 
-    symbols = sorted(set(TICKERS) | set(BENCHMARK_TICKERS))
+    symbols = daily_symbols(TICKERS, BENCHMARK_TICKERS, load_positions())
     if args.limit:
         symbols = symbols[:args.limit]
 

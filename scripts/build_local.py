@@ -38,7 +38,8 @@ from common.adjustments import adjusted_prices  # noqa: E402
 from common.fundamentals import build_fundamental_tables  # noqa: E402
 from common.indicators import build_signal_series  # noqa: E402
 from common.positions import (  # noqa: E402
-    build_held_table, check_held_freshness, held_symbols, load_positions,
+    build_held_table, check_held_freshness, daily_symbols, held_symbols,
+    load_positions,
 )
 from common.trades import load_trades, reconcile  # noqa: E402
 from scoring.calls import CALLS_LOG, load_gold_calls  # noqa: E402
@@ -136,7 +137,7 @@ def main():
     # them would turn this build's ~2 minutes into ~10. --universe accepts
     # that cost deliberately.
     from common.config import TICKERS, BENCHMARK_TICKERS
-    tracked = set(TICKERS) | set(BENCHMARK_TICKERS)
+    tracked = set(daily_symbols(TICKERS, BENCHMARK_TICKERS, load_positions()))
     present = {r[0] for r in con.execute(
         "SELECT DISTINCT symbol FROM bronze_prices").fetchall()}
     symbols = sorted(present) if args.universe else sorted(tracked & present)
@@ -185,7 +186,11 @@ def main():
     # The freshness check is a hard gate - a stale held name fails the build.
     positions = load_positions()
     if positions:
-        tracked, untracked = check_held_freshness(con, held_symbols(positions))
+        tracked, untracked, dead = check_held_freshness(
+            con, held_symbols(positions))
+        if dead:
+            print(f"  DEAD HELD TICKERS (no data for 2+ sessions - check the "
+                  f"broker for a delisting or rename): {', '.join(dead)}")
         build_held_table(con, positions)
         print(f"gold_held_positions: {len(tracked)} tracked, "
               f"{len(untracked)} held-unscored (promotion candidates)")

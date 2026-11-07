@@ -99,37 +99,57 @@ def load_positions(path=POSITIONS_PATH):
         return parse_positions(f.read())
 
 
+# Sessions a held name may lag before it counts as a dead listing.
+DEAD_SESSIONS = 2
+
+
 def held_symbols(positions):
     """The distinct held symbols, aggregated across accounts."""
     return sorted({p["symbol"] for p in positions})
+
+
+def daily_symbols(tickers, benchmarks, positions):
+    """The daily fetch-and-build set: watchlist + benchmarks + every holding.
+
+    A holding outside the watchlist still needs daily prices and signals -
+    the guard and the sell side must see every name that holds real money.
+    """
+    return sorted(set(tickers) | set(benchmarks) | set(held_symbols(positions)))
 
 
 def check_held_freshness(con, symbols):
     """Hard gate (plan task 12): every held symbol the warehouse tracks
     must be present at the warehouse's latest as_of_date.
 
-    Returns (tracked, untracked). Raises when a tracked held name has gone
-    stale - real money is riding on those rows, so a quiet gap is exactly
-    the absence-is-a-failure case (SPEC P4). Untracked held names are not
-    an error: they are the promotion-candidate list, reported not raised.
+    Returns (tracked, untracked, dead). Raises when a tracked held name
+    lags by exactly one session - a fetch glitch a rerun fixes, and real
+    money is riding on those rows (SPEC P4). A name missing DEAD_SESSIONS
+    or more is a dead listing (delisted, renamed): returned as `dead` for
+    the caller to report loudly, because failing the whole build on it
+    would leave every other held name unscored. Untracked held names are
+    not an error: they are the promotion-candidate list.
     """
     if not symbols:
-        return [], []
-    latest = con.execute(
-        "SELECT MAX(as_of_date) FROM silver_signals").fetchone()[0]
+        return [], [], []
+    dates = [r[0] for r in con.execute(
+        "SELECT DISTINCT as_of_date FROM silver_signals "
+        "ORDER BY as_of_date").fetchall()]
+    latest = dates[-1]
     placeholders = ", ".join("?" for _ in symbols)
     have = dict(con.execute(
         f"SELECT symbol, MAX(as_of_date) FROM silver_signals "
         f"WHERE symbol IN ({placeholders}) GROUP BY symbol",
         list(symbols)).fetchall())
     untracked = sorted(s for s in symbols if s not in have)
-    stale = sorted(s for s, d in have.items() if d != latest)
+    missed = {s: sum(1 for d in dates if d > last) for s, last in have.items()}
+    dead = sorted(s for s, n in missed.items() if n >= DEAD_SESSIONS)
+    stale = sorted(s for s, n in missed.items() if 0 < n < DEAD_SESSIONS)
     if stale:
         raise ValueError(
             f"held symbols stale in silver_signals (latest {latest}): "
             f"{', '.join(stale)} - a held name with missing data is a "
             "failure, not a silence")
-    return sorted(have), untracked
+    return sorted(s for s, n in missed.items() if n == 0), untracked, dead
 
 
 def build_held_table(con, positions):

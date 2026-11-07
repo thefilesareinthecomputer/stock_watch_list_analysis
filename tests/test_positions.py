@@ -12,8 +12,8 @@ import pandas as pd
 import pytest
 
 from common.positions import (
-    build_held_table, check_held_freshness, held_symbols, load_positions,
-    parse_positions,
+    build_held_table, check_held_freshness, daily_symbols, held_symbols,
+    load_positions, parse_positions,
 )
 
 FIXTURE = """\
@@ -50,6 +50,18 @@ def test_malformed_lines_fail_loudly(text):
         parse_positions(text)
 
 
+def test_daily_symbols_always_include_every_held_name():
+    # A holding outside the watchlist used to get no daily prices or
+    # signals at all - the daily set is watchlist + benchmarks + holdings.
+    positions = parse_positions(FIXTURE)
+    assert daily_symbols(["AAA", "XXX"], ["SPY"], positions) == [
+        "AAA", "BBB", "CCC", "SPY", "XXX"]
+
+
+def test_daily_symbols_without_positions_is_watchlist_plus_benchmarks():
+    assert daily_symbols(["AAA"], ["SPY"], []) == ["AAA", "SPY"]
+
+
 def test_missing_file_means_no_positions(tmp_path):
     assert load_positions(path=str(tmp_path / "POSITIONS.md")) == []
 
@@ -66,10 +78,11 @@ def _warehouse():
 
 
 def test_freshness_gate_splits_tracked_from_untracked():
-    tracked, untracked = check_held_freshness(
+    tracked, untracked, dead = check_held_freshness(
         _warehouse(), ["AAA", "BBB", "ZZZ"])
     assert tracked == ["AAA", "BBB"]
     assert untracked == ["ZZZ"]  # promotion candidate, not an error
+    assert dead == []
 
 
 def test_stale_tracked_held_symbol_fails_the_gate():
@@ -78,6 +91,20 @@ def test_stale_tracked_held_symbol_fails_the_gate():
                 "AND as_of_date = '2026-08-11'")
     with pytest.raises(ValueError, match="BBB"):
         check_held_freshness(con, ["AAA", "BBB"])
+
+
+def test_held_name_missing_two_sessions_is_dead_not_a_build_failure():
+    # One missing session is a fetch glitch (fail closed, rerun fixes it);
+    # two or more is a dead listing (delisted, renamed) - reported loudly,
+    # but it must not block every other held name from being scored.
+    con = _warehouse()
+    con.execute("INSERT INTO silver_signals VALUES ('AAA', '2026-08-12')")
+    con.execute("DELETE FROM silver_signals WHERE symbol = 'BBB' "
+                "AND as_of_date = '2026-08-11'")
+    tracked, untracked, dead = check_held_freshness(con, ["AAA", "BBB"])
+    assert tracked == ["AAA"]
+    assert dead == ["BBB"]
+    assert untracked == []
 
 
 def test_held_table_joins_rank_and_call_untracked_gets_nulls():
