@@ -149,6 +149,39 @@ def test_held_table_carries_the_deteriorating_alert():
     assert pd.isna(by["CCC"])          # no broad data: honest null
 
 
+def _daily_prices(con, symbol, start, end, sessions=260):
+    """A straight-line adjusted close path over `sessions` business days."""
+    dates = pd.bdate_range("2025-07-01", periods=sessions)
+    step = (end - start) / (sessions - 1)
+    con.execute("CREATE TABLE IF NOT EXISTS silver_adjusted_prices "
+                "(symbol VARCHAR, date DATE, adj_open DOUBLE, "
+                "adj_close DOUBLE)")
+    for i, d in enumerate(dates):
+        px = start + step * i
+        con.execute("INSERT INTO silver_adjusted_prices VALUES (?, ?, ?, ?)",
+                    [symbol, d.date(), px, px])
+
+
+def test_deteriorating_comes_from_daily_prices_not_the_monthly_screen():
+    # The monthly screen can be weeks old; a held name that has been
+    # falling for a year must read deteriorating from today's daily
+    # prices even when the stale screen still says otherwise.
+    con = _warehouse()
+    con.execute("CREATE TABLE gold_line_of_sight (symbol VARCHAR, "
+                "deteriorating BOOLEAN, ret_3m DOUBLE, ret_12m DOUBLE)")
+    con.execute("INSERT INTO gold_line_of_sight VALUES "
+                "('AAA', FALSE, 0.10, 0.40), ('BBB', TRUE, -0.10, -0.30)")
+    _daily_prices(con, "AAA", 200.0, 100.0)   # a year of steady decline
+    _daily_prices(con, "BBB", 100.0, 150.0)   # a year of steady rise
+    build_held_table(con, parse_positions(FIXTURE))
+    df = con.execute("SELECT symbol, deteriorating, ret_3m, ret_12m "
+                     "FROM gold_held_positions").df().set_index("symbol")
+    assert bool(df.loc["AAA", "deteriorating"]) is True
+    assert df.loc["AAA", "ret_12m"] < 0 and df.loc["AAA", "ret_3m"] < 0
+    assert bool(df.loc["BBB", "deteriorating"]) is False
+    assert df.loc["BBB", "ret_12m"] > 0
+
+
 def test_held_table_works_without_rank_or_call_tables():
     con = _warehouse()
     build_held_table(con, parse_positions(FIXTURE))

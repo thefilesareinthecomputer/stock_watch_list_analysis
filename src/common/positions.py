@@ -185,6 +185,40 @@ def build_held_table(con, positions):
         # 12 months), covering held ETFs and funds that calls never touch.
         sight_cols = "l.deteriorating, l.ret_3m, l.ret_12m"
         sight_join = "LEFT JOIN gold_line_of_sight l USING (symbol)"
+    daily_cte = ""
+    if _has("silver_adjusted_prices"):
+        # Same definition as gold_line_of_sight (session offsets 63/126/252,
+        # rn = 1 is the latest close) but from the DAILY split-adjusted
+        # prices, which every held name now gets. The monthly screen can be
+        # weeks stale; it remains the fallback for names without daily rows.
+        daily_cte = """,
+        ordered AS (
+            SELECT p.symbol, p.adj_close AS close, ROW_NUMBER() OVER (
+                       PARTITION BY p.symbol ORDER BY p.date DESC) AS rn
+            FROM silver_adjusted_prices p JOIN held USING (symbol)
+        ),
+        daily AS (
+            SELECT symbol,
+                   MAX(CASE WHEN rn = 1 THEN close END)
+                       / NULLIF(MAX(CASE WHEN rn = 63 THEN close END), 0)
+                       - 1 AS ret_3m,
+                   MAX(CASE WHEN rn = 1 THEN close END)
+                       / NULLIF(MAX(CASE WHEN rn = 126 THEN close END), 0)
+                       - 1 AS ret_6m,
+                   MAX(CASE WHEN rn = 1 THEN close END)
+                       / NULLIF(MAX(CASE WHEN rn = 252 THEN close END), 0)
+                       - 1 AS ret_12m
+            FROM ordered GROUP BY symbol
+        )"""
+        det, r3, r12 = (("l.deteriorating", "l.ret_3m", "l.ret_12m")
+                        if sight_join else ("NULL", "NULL", "NULL"))
+        sight_cols = (
+            "CASE WHEN d.ret_12m IS NOT NULL THEN "
+            "(d.ret_3m < 0 AND d.ret_6m < 0 AND d.ret_12m < 0) "
+            f"ELSE {det} END AS deteriorating, "
+            f"COALESCE(d.ret_3m, {r3}) AS ret_3m, "
+            f"COALESCE(d.ret_12m, {r12}) AS ret_12m")
+        sight_join += "\n            LEFT JOIN daily d USING (symbol)"
     con.execute(f"""
         CREATE OR REPLACE TABLE gold_held_positions AS
         WITH held AS (
@@ -192,7 +226,7 @@ def build_held_table(con, positions):
                    STRING_AGG(account, ', ' ORDER BY account) AS accounts,
                    SUM(quantity) AS total_quantity
             FROM incoming_positions GROUP BY UPPER(symbol)
-        )
+        ){daily_cte}
         SELECT held.symbol, held.accounts, held.total_quantity,
                EXISTS (SELECT 1 FROM silver_signals s
                        WHERE s.symbol = held.symbol) AS tracked,
