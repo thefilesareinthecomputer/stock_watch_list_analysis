@@ -34,6 +34,7 @@ sys.path.insert(0, os.path.join(ROOT, "src"))
 import duckdb  # noqa: E402
 
 from backtest.harness import CAVEATS  # noqa: E402
+from common.tables import has_table  # noqa: E402
 from common.trades import (  # noqa: E402
     load_trades, lot_basis, loss_harvest, open_lots,
 )
@@ -48,17 +49,11 @@ REPORTS_DIR = os.path.join(ROOT, "reports")
 STATE_TABLE = "weekly_review_state"
 
 
-def _has(con, table):
-    return con.execute(
-        "SELECT COUNT(*) FROM information_schema.tables "
-        "WHERE table_name = ?", [table]).fetchone()[0]
-
-
 def prior_state(con, today):
     """symbol -> {deteriorating, exit_breach} at the most recent review
     strictly before today. Empty on the first review, so anything true
     now is newly true - the first run surfaces the standing evidence."""
-    if not _has(con, STATE_TABLE):
+    if not has_table(con, STATE_TABLE):
         return {}
     row = con.execute(
         f"SELECT MAX(review_date) FROM {STATE_TABLE} "
@@ -81,8 +76,8 @@ def held_evidence(con, registry, trades, today, rounds):
     review must still print for the names that are fine.
     """
     held = {}
-    if not _has(con, "gold_held_positions") or \
-            not _has(con, "silver_signals"):
+    if not has_table(con, "gold_held_positions") or \
+            not has_table(con, "silver_signals"):
         return held, None
     for (sym, accounts, qty, tracked, rank, call, det,
          ret_3m, ret_12m) in con.execute(
@@ -123,7 +118,7 @@ def held_evidence(con, registry, trades, today, rounds):
     call_state = latest_calls(rounds)
     scoring_tables = ("silver_signals", "gold_candidate_signals",
                       "bronze_entity", "bronze_security")
-    if latest is not None and all(_has(con, t) for t in scoring_tables):
+    if latest is not None and all(has_table(con, t) for t in scoring_tables):
         exit_line = registry["calls"]["exit_percentile"]
         scores = round_scores(con, registry, [str(latest)[:10]])
         for row in scores.itertuples():

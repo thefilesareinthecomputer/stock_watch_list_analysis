@@ -14,6 +14,8 @@ import os
 
 import pandas as pd
 
+from common.tables import has_table
+
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 POSITIONS_PATH = os.path.join(ROOT, "knowledge", "POSITIONS.md")
 
@@ -160,33 +162,28 @@ def build_held_table(con, positions):
     the gitignored warehouse - the leak boundary for task 12's "tier
     membership never reaches a tracked file".
     """
-    def _has(table):
-        return con.execute(
-            "SELECT COUNT(*) FROM information_schema.tables "
-            "WHERE table_name = ?", [table]).fetchone()[0]
-
     con.register("incoming_positions", pd.DataFrame(positions))
     rank_join = call_join = sight_join = ""
     rank_cols, call_col = "NULL AS composite_rank, NULL AS composite_score", \
         "NULL AS call"
     sight_cols = "NULL AS deteriorating, NULL AS ret_3m, NULL AS ret_12m"
-    if _has("gold_watchlist_ranked_v2"):
+    if has_table(con, "gold_watchlist_ranked_v2"):
         rank_cols = "r.composite_rank, r.composite_score"
         rank_join = "LEFT JOIN gold_watchlist_ranked_v2 r USING (symbol)"
-    if _has("gold_calls"):
+    if has_table(con, "gold_calls"):
         call_col = "c.call"
         call_join = """
             LEFT JOIN (
                 SELECT symbol, call FROM gold_calls
                 WHERE as_of_date = (SELECT MAX(as_of_date) FROM gold_calls)
             ) c USING (symbol)"""
-    if _has("gold_line_of_sight"):
+    if has_table(con, "gold_line_of_sight"):
         # The sell-side alert: absolute steady decline (down over 3, 6 and
         # 12 months), covering held ETFs and funds that calls never touch.
         sight_cols = "l.deteriorating, l.ret_3m, l.ret_12m"
         sight_join = "LEFT JOIN gold_line_of_sight l USING (symbol)"
     daily_cte = ""
-    if _has("silver_adjusted_prices"):
+    if has_table(con, "silver_adjusted_prices"):
         # Same definition as gold_line_of_sight (session offsets 63/126/252,
         # rn = 1 is the latest close) but from the DAILY split-adjusted
         # prices, which every held name now gets. The monthly screen can be

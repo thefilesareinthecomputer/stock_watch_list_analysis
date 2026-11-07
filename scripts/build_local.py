@@ -37,6 +37,7 @@ from backtest.returns import DECAY_HORIZONS, build_forward_returns  # noqa: E402
 from common.adjustments import adjusted_prices  # noqa: E402
 from common.fundamentals import build_fundamental_tables  # noqa: E402
 from common.indicators import build_signal_series  # noqa: E402
+from common.tables import has_table  # noqa: E402
 from common.positions import (  # noqa: E402
     build_held_table, check_held_freshness, daily_symbols, held_symbols,
     load_positions,
@@ -165,9 +166,7 @@ def main():
 
     # Candidate tier: EDGAR fundamentals, ranked but weightless. Skipped
     # cleanly when the fundamentals backfill has not been run on this machine.
-    has_facts = con.execute(
-        "SELECT COUNT(*) FROM information_schema.tables "
-        "WHERE table_name = 'bronze_fundamentals'").fetchone()[0]
+    has_facts = has_table(con, "bronze_fundamentals")
     if has_facts:
         build_fundamental_tables(con)
         build_candidate_signals(con)

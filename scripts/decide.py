@@ -19,17 +19,12 @@ sys.path.insert(0, os.path.join(ROOT, "src"))
 import duckdb  # noqa: E402
 
 from backtest.harness import CAVEATS  # noqa: E402
+from common.tables import has_table  # noqa: E402
 from common.trades import load_trades, loss_harvest  # noqa: E402
 from scoring.calls import read_rounds  # noqa: E402
 
 WAREHOUSE = os.path.join(ROOT, "warehouse", "market.duckdb")
 REPORTS_DIR = os.path.join(ROOT, "reports")
-
-
-def _has(con, table):
-    return con.execute(
-        "SELECT COUNT(*) FROM information_schema.tables "
-        "WHERE table_name = ?", [table]).fetchone()[0]
 
 
 def _call_lines(calls, state):
@@ -79,7 +74,7 @@ def build_report(con, rounds, trades, today):
         lines += ["", "Hold: " + ", ".join(holds)]
 
     lines += ["", "## Held positions"]
-    if _has(con, "gold_held_positions"):
+    if has_table(con, "gold_held_positions"):
         held = con.execute(
             "SELECT symbol, accounts, total_quantity, tracked, "
             "composite_rank, call, deteriorating "
@@ -113,7 +108,7 @@ def build_report(con, rounds, trades, today):
         lines.append("- nothing below basis (or no journaled taxable lots)")
 
     lines += ["", "## Advisory - UNVALIDATED SCREEN, not calls"]
-    if _has(con, "gold_line_of_sight"):
+    if has_table(con, "gold_line_of_sight"):
         emerging = [row[0] for row in con.execute(
             "SELECT symbol FROM gold_line_of_sight WHERE emerging "
             "ORDER BY mom_pct DESC").fetchall()]

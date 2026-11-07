@@ -18,6 +18,8 @@ from datetime import datetime, timezone
 
 import pandas as pd
 
+from common.tables import has_table
+
 BROAD_TIER = "broad_top_n"
 BROAD_WINDOW_DAYS = 730          # ~2 trading years: enough for 12-1 momentum
 FETCH_BATCH = 100
@@ -147,10 +149,7 @@ def rank_dollar_volume(con, top_n):
 
 def current_members(con, tier=BROAD_TIER):
     """Membership reconstructed from the event log (empty if no table)."""
-    exists = con.execute(
-        "SELECT COUNT(*) FROM information_schema.tables "
-        "WHERE table_name = 'universe_membership'").fetchone()[0]
-    if not exists:
+    if not has_table(con, "universe_membership"):
         return set()
     rows = con.execute("""
         SELECT symbol FROM universe_membership WHERE tier = ?

@@ -20,6 +20,8 @@ import time
 
 import pandas as pd
 
+from common.tables import has_table
+
 TICKER_CIK_URL = "https://www.sec.gov/files/company_tickers.json"
 BROWSE_EDGAR_URL = "https://www.sec.gov/cgi-bin/browse-edgar"
 SUBMISSIONS_URL = "https://data.sec.gov/submissions/CIK{cik}.json"
@@ -212,10 +214,7 @@ def universe_backfill_targets(con):
     are never refetched. Symbols that legitimately have no facts (ETFs,
     foreign listings) reappear on resume; their fetches are cheap misses.
     """
-    have_facts = con.execute(
-        "SELECT COUNT(*) FROM information_schema.tables "
-        "WHERE table_name = 'bronze_fundamentals'").fetchone()[0]
-    if not have_facts:
+    if not has_table(con, "bronze_fundamentals"):
         return [r[0] for r in con.execute(
             "SELECT DISTINCT symbol FROM bronze_prices ORDER BY symbol"
         ).fetchall()]

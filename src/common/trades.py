@@ -20,6 +20,8 @@ import json
 import os
 from datetime import date, timedelta
 
+from common.tables import has_column, has_table
+
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 TRADES_LOG = os.path.join(ROOT, "trades.jsonl")
 
@@ -174,10 +176,7 @@ def _latest_prices(con):
     the bronze close overrides and the sight flag is kept.
     """
     prices = {}
-    have_sight = con.execute(
-        "SELECT COUNT(*) FROM information_schema.tables "
-        "WHERE table_name = 'gold_line_of_sight'").fetchone()[0]
-    if have_sight:
+    if has_table(con, "gold_line_of_sight"):
         for sym, close, det in con.execute(
                 "SELECT symbol, close, deteriorating "
                 "FROM gold_line_of_sight").fetchall():
@@ -194,11 +193,7 @@ def _latest_prices(con):
 def _splits_after(con, symbol, after):
     """[(date, ratio)] for splits strictly after `after`, oldest first.
     Empty when the price table carries no split column (older fixtures)."""
-    has_col = con.execute(
-        "SELECT COUNT(*) FROM information_schema.columns "
-        "WHERE table_name = 'bronze_prices' AND column_name = 'split_ratio'"
-    ).fetchone()[0]
-    if not has_col:
+    if not has_column(con, "bronze_prices", "split_ratio"):
         return []
     return [(str(d)[:10], r) for d, r in con.execute(
         "SELECT date, split_ratio FROM bronze_prices WHERE symbol = ? "

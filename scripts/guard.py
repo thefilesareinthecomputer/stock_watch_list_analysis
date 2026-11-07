@@ -29,18 +29,13 @@ from common.guard import (  # noqa: E402
     load_events, next_events,
 )
 from common.positions import load_positions  # noqa: E402
+from common.tables import has_table  # noqa: E402
 
 WAREHOUSE = os.path.join(ROOT, "warehouse", "market.duckdb")
 EVENTS = os.path.join(ROOT, "guard_events.jsonl")
 REPORTS = os.path.join(ROOT, "reports")
 MARKET = "SPY"
 FUNDS = "Funds (ETF / mutual fund)"
-
-
-def _has(con, table):
-    return con.execute(
-        "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = ?",
-        [table]).fetchone()[0]
 
 
 def _quantities(positions):
@@ -64,14 +59,14 @@ def _prices(con, symbols):
 
 
 def _lookup(con, table, column):
-    if not _has(con, table):
+    if not has_table(con, table):
         return {}
     return dict(con.execute(
         f"SELECT symbol, {column} FROM {table}").fetchall())
 
 
 def _engine(con):
-    if not _has(con, "gold_held_positions"):
+    if not has_table(con, "gold_held_positions"):
         return {}
     return {r[0]: (r[1], r[2]) for r in con.execute(
         "SELECT symbol, composite_rank, deteriorating "
