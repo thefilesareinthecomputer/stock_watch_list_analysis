@@ -114,6 +114,25 @@ def test_earnings_yield_uses_split_adjusted_shares():
     assert _row(con, "S")["earnings_yield"] == pytest.approx(1000.0 / 20000.0)
 
 
+def test_a_split_after_the_scoring_date_does_not_leak_into_its_yield():
+    """Yahoo's closes are split-adjusted to TODAY's share count, so a
+    date before a later 2-for-1 already shows the post-split price (100,
+    not the 200 it traded at). Market cap there is that price times the
+    share count in today's terms (200), not the count as filed (100) -
+    using the split as of the date doubled every pre-split yield."""
+    con = _con()
+    before = "2024-03-01"
+    _signal(con, "S", before)
+    _price(con, "S", "2024-02-01", 100.0)
+    _price(con, "S", before, 100.0)
+    _price(con, "S", "2024-04-01", 100.0, split=2.0)   # after the date
+    _metrics(con, "S", "2024-02-01", net_income=1000.0, shares=100.0,
+             shares_date="2024-02-01")
+    build_candidate_signals(con)
+    assert _row(con, "S", before)["earnings_yield"] == pytest.approx(
+        1000.0 / 20000.0)
+
+
 def test_stale_share_count_nulls_earnings_yield():
     # A share count older than ~400 days (BRK's undimensioned dei count is
     # 15 years stale) must yield NULL, never a fictional market cap.

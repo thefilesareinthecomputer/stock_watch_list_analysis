@@ -39,6 +39,21 @@ def test_stale_when_warehouse_lags(tmp_path):
     assert str(latest) < str(expected)
 
 
+def test_held_names_are_checked_one_by_one_not_by_the_global_max(tmp_path):
+    # The global max can be current while a held name is not. One session
+    # behind is a fetch glitch (fail and refresh); further behind is a dead
+    # listing (report it, but do not block every other name).
+    path = str(tmp_path / "w.duckdb")
+    con = duckdb.connect(path)
+    con.execute("CREATE TABLE bronze_prices (symbol VARCHAR, date DATE)")
+    con.execute("INSERT INTO bronze_prices VALUES ('LIVE', '2026-08-21'), "
+                "('LAG1', '2026-08-20'), ('DEAD', '2026-08-10')")
+    con.close()
+    status = fresh.held_status(path, ["LIVE", "LAG1", "DEAD", "NONE"],
+                               now=MONDAY_PREOPEN)
+    assert status == {"behind": ["LAG1"], "dead": ["DEAD", "NONE"]}
+
+
 def test_weekend_expects_friday_not_saturday(tmp_path):
     saturday_night = datetime(2026, 8, 22, 23, 0,
                               tzinfo=ZoneInfo("America/New_York"))

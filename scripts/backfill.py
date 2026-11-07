@@ -31,7 +31,9 @@ import yfinance as yf  # noqa: E402
 
 from common.config import TICKERS, BENCHMARK_TICKERS, HISTORY_START_DATE  # noqa: E402
 from common.positions import daily_symbols, load_positions  # noqa: E402
-from common.quality import completed_session_cutoff  # noqa: E402
+from common.quality import (  # noqa: E402
+    completed_session_cutoff, last_trading_session,
+)
 from common.run_context import new_run_id, now_ts  # noqa: E402
 from common.security import ensure_quote_types  # noqa: E402
 
@@ -100,6 +102,18 @@ def _fetch(batch, start):
         sub["symbol"] = symbol
         frames.append(sub)
     return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+
+
+def stale_from_source(con, symbols, previous_session):
+    """[(symbol, newest bar date)] whose newest stored bar is older than
+    `previous_session` - the source answered, but with old data. Rows
+    coming back is not the same as being current."""
+    marks = ", ".join("?" for _ in symbols)
+    rows = con.execute(
+        f"SELECT symbol, MAX(date) FROM {TABLE} WHERE symbol IN ({marks}) "
+        f"GROUP BY symbol HAVING MAX(date) < ? ORDER BY symbol",
+        [*symbols, previous_session]).fetchall()
+    return [(s, str(d)) for s, d in rows]
 
 
 def backfill_prices(con, symbols, start):
@@ -176,6 +190,12 @@ def main():
     print(f"  {rows} rows, {syms} symbols, {lo} to {hi}")
     if missing:
         print(f"  NO DATA for {len(missing)}: {', '.join(sorted(missing))}")
+    expected = last_trading_session(completed_session_cutoff())
+    previous = last_trading_session(expected - pd.Timedelta(days=1))
+    old = stale_from_source(con, symbols, str(previous))
+    if old:
+        print(f"  STALE FROM SOURCE (newest bar older than {previous}): "
+              + ", ".join(f"{s} {d}" for s, d in old))
     con.close()
 
 

@@ -19,6 +19,20 @@ def _multi(symbols):
                          index=DATES) for s in symbols}, axis=1)
 
 
+def test_a_symbol_whose_newest_bar_is_old_is_stale_not_fetched():
+    # The source can return rows that stop weeks ago (a renamed listing):
+    # "rows came back" must not count as current.
+    import duckdb
+    from backfill import stale_from_source
+
+    con = duckdb.connect(":memory:")
+    con.execute("CREATE TABLE bronze_prices (symbol VARCHAR, date DATE)")
+    con.execute("INSERT INTO bronze_prices VALUES ('LIVE', '2026-11-06'), "
+                "('OLD', '2026-09-10')")
+    assert stale_from_source(con, ["LIVE", "OLD"], "2026-11-05") == [
+        ("OLD", "2026-09-10")]
+
+
 def test_multi_level_single_symbol_selects_by_ticker():
     # The 726 % 25 == 1 crash: a one-symbol batch still has ticker-level
     # columns and must be selected, not passed through.

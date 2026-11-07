@@ -57,15 +57,28 @@ def build_candidate_signals(con):
     ctes, joins = _rank_ctes()
     con.execute(f"""
         CREATE OR REPLACE TABLE gold_candidate_signals AS
-        WITH prices AS (
+        WITH prices_cum AS (
             SELECT symbol, date, close,
                 EXP(SUM(LN(CASE WHEN split_ratio IS NULL OR split_ratio = 0
                                 THEN 1.0 ELSE split_ratio END))
                     OVER (PARTITION BY symbol ORDER BY date)) AS cum_split
             FROM bronze_prices
         ),
+        -- Yahoo's close is split-adjusted to TODAY's share count (verified
+        -- 2026-11-07 across the warehouse), so a share count converts to
+        -- today's terms with the symbol's FINAL cumulative split, not the
+        -- split as of the scoring date - that leaked every later split
+        -- into earlier yields (look-ahead).
+        prices AS (
+            SELECT *, LAST_VALUE(cum_split) OVER (
+                       PARTITION BY symbol ORDER BY date
+                       ROWS BETWEEN UNBOUNDED PRECEDING
+                                AND UNBOUNDED FOLLOWING) AS cum_split_final
+            FROM prices_cum
+        ),
         base AS (
-            SELECT s.symbol, s.as_of_date, p.close, p.cum_split,
+            SELECT s.symbol, s.as_of_date, p.close,
+                   p.cum_split_final AS cum_split,
                    m.net_income, m.shares_outstanding, m.shares_date,
                    m.filed, m.roe, m.gross_profitability, m.revenues,
                    e.sic

@@ -182,6 +182,28 @@ def test_deteriorating_comes_from_daily_prices_not_the_monthly_screen():
     assert df.loc["BBB", "ret_12m"] > 0
 
 
+def test_stale_flags_are_never_shown_as_current():
+    # Daily prices exist. A held name whose daily series stopped early, or
+    # that has no daily rows at all, must read NULL (unknown) - not the
+    # old daily values and not the weeks-old monthly screen.
+    con = _warehouse()
+    con.execute("CREATE TABLE gold_line_of_sight (symbol VARCHAR, "
+                "deteriorating BOOLEAN, ret_3m DOUBLE, ret_12m DOUBLE)")
+    con.execute("INSERT INTO gold_line_of_sight VALUES "
+                "('CCC', TRUE, -0.10, -0.30)")
+    _daily_prices(con, "AAA", 200.0, 100.0)             # current, falling
+    _daily_prices(con, "BBB", 200.0, 100.0, sessions=255)
+    con.execute("DELETE FROM silver_adjusted_prices WHERE symbol = 'BBB' "
+                "AND date > (SELECT MAX(date) - INTERVAL 10 DAY "
+                "FROM silver_adjusted_prices)")       # BBB stopped early
+    build_held_table(con, parse_positions(FIXTURE))
+    df = con.execute("SELECT symbol, deteriorating FROM gold_held_positions"
+                     ).df().set_index("symbol")
+    assert bool(df.loc["AAA", "deteriorating"]) is True
+    assert pd.isna(df.loc["BBB", "deteriorating"])    # stale daily
+    assert pd.isna(df.loc["CCC", "deteriorating"])    # stale screen only
+
+
 def test_held_table_works_without_rank_or_call_tables():
     con = _warehouse()
     build_held_table(con, parse_positions(FIXTURE))

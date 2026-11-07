@@ -194,6 +194,12 @@ def build_held_table(con, positions):
             SELECT p.symbol, p.adj_close AS close, ROW_NUMBER() OVER (
                        PARTITION BY p.symbol ORDER BY p.date DESC) AS rn
             FROM silver_adjusted_prices p JOIN held USING (symbol)
+            -- Only series that reach the latest session: a stopped series
+            -- (delisted, renamed) must read unknown, not old values.
+            WHERE p.symbol IN (
+                SELECT symbol FROM silver_adjusted_prices GROUP BY symbol
+                HAVING MAX(date) = (SELECT MAX(date)
+                                    FROM silver_adjusted_prices))
         ),
         returns AS (
             SELECT symbol, {trailing_return_cols()}
@@ -202,8 +208,10 @@ def build_held_table(con, positions):
         daily AS (
             SELECT *, {DETERIORATING} AS deteriorating FROM returns
         )"""
-        det, r3, r12 = (("l.deteriorating", "l.ret_3m", "l.ret_12m")
-                        if sight_join else ("NULL", "NULL", "NULL"))
+        # With daily prices available there is no fallback: the monthly
+        # screen is weeks old and undated here, so a name without current
+        # daily rows reads NULL (unknown) rather than stale values.
+        det, r3, r12 = "NULL", "NULL", "NULL"
         sight_cols = (
             "CASE WHEN d.ret_12m IS NOT NULL THEN d.deteriorating "
             f"ELSE {det} END AS deteriorating, "
