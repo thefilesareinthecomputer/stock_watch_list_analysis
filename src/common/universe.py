@@ -147,6 +147,21 @@ def rank_dollar_volume(con, top_n):
     """, [top_n]).df()
 
 
+# Absolute trailing returns and the sell-side "deteriorating" flag, shared
+# by the monthly screen (gold_line_of_sight) and the daily held table
+# (common.positions) so the two can never drift. Both expressions read a
+# CTE named `ordered` with columns symbol, close and rn (1 = latest close).
+TRAILING_SESSIONS = {"ret_3m": 63, "ret_6m": 126, "ret_12m": 252}
+DETERIORATING = "(ret_3m < 0 AND ret_6m < 0 AND ret_12m < 0)"
+
+
+def trailing_return_cols():
+    return ",\n".join(
+        f"MAX(CASE WHEN rn = 1 THEN close END) / NULLIF(MAX(CASE WHEN "
+        f"rn = {rn} THEN close END), 0) - 1 AS {name}"
+        for name, rn in TRAILING_SESSIONS.items())
+
+
 def current_members(con, tier=BROAD_TIER):
     """Membership reconstructed from the event log (empty if no table)."""
     if not has_table(con, "universe_membership"):
@@ -223,15 +238,7 @@ def build_line_of_sight(con, watchlist, held):
                    MAX(CASE WHEN rn = 21 THEN close END)
                        / NULLIF(MAX(CASE WHEN rn = 252 THEN close END), 0)
                        - 1 AS mom_12_1,
-                   MAX(CASE WHEN rn = 1 THEN close END)
-                       / NULLIF(MAX(CASE WHEN rn = 63 THEN close END), 0)
-                       - 1 AS ret_3m,
-                   MAX(CASE WHEN rn = 1 THEN close END)
-                       / NULLIF(MAX(CASE WHEN rn = 126 THEN close END), 0)
-                       - 1 AS ret_6m,
-                   MAX(CASE WHEN rn = 1 THEN close END)
-                       / NULLIF(MAX(CASE WHEN rn = 252 THEN close END), 0)
-                       - 1 AS ret_12m,
+                   {trailing_return_cols()},
                    MEDIAN(CASE WHEN rn <= 63 THEN dv END) AS dollar_volume_63d,
                    MEDIAN(CASE WHEN rn <= 21 THEN dv END)
                        / NULLIF(MEDIAN(CASE WHEN rn <= 252 THEN dv END), 0)
@@ -253,7 +260,7 @@ def build_line_of_sight(con, watchlist, held):
                -- The sell-side mirror of emerging, and deliberately
                -- ABSOLUTE: lower than 3, 6, and 12 months ago is steady
                -- decline whatever the rest of the market is doing.
-               (ret_3m < 0 AND ret_6m < 0 AND ret_12m < 0) AS deteriorating,
+               {DETERIORATING} AS deteriorating,
                dollar_volume_63d, dv_acceleration, dv_accel_pct,
                COALESCE(is_watchlist, FALSE) AS is_watchlist,
                COALESCE(is_held, FALSE) AS is_held,

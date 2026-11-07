@@ -9,8 +9,8 @@ import pandas as pd
 import pytest
 
 from common.universe import (
-    build_line_of_sight, current_members, fetch_broad_window,
-    rank_dollar_volume, update_membership,
+    DETERIORATING, build_line_of_sight, current_members, fetch_broad_window,
+    rank_dollar_volume, trailing_return_cols, update_membership,
 )
 
 
@@ -168,6 +168,15 @@ def test_emerging_is_empty_in_a_bear_market_not_a_permanent_decile():
     falling = con.execute("SELECT COUNT(*) FROM gold_line_of_sight "
                           "WHERE deteriorating").fetchone()[0]
     assert falling == 11
+
+
+def test_one_deteriorating_definition_serves_screen_and_held_table():
+    # The monthly screen and the daily held table must not drift: both
+    # build from this SQL, over a CTE named `ordered` (rn 1 = latest).
+    cols = trailing_return_cols()
+    for name, rn in (("ret_3m", 63), ("ret_6m", 126), ("ret_12m", 252)):
+        assert f"rn = {rn} THEN close" in cols and f"AS {name}" in cols
+    assert DETERIORATING == "(ret_3m < 0 AND ret_6m < 0 AND ret_12m < 0)"
 
 
 def test_deteriorating_needs_all_three_horizons_down():
