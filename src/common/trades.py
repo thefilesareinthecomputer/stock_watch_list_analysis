@@ -17,6 +17,7 @@ Malformed entries fail loudly, same argument as positions.parse_positions:
 a silently skipped fill would corrupt every lot computed after it.
 """
 import json
+import math
 import os
 from datetime import date, timedelta
 
@@ -212,18 +213,27 @@ def lot_basis(con, lot, symbol):
     (post-split) and are never adjusted. The splits come back so reports
     can say a split happened, not just absorb it.
     """
-    basis = lot["price"]
-    if basis is None:
-        row = con.execute(
-            "SELECT close FROM bronze_prices WHERE symbol = ? AND date <= ? "
-            "ORDER BY date DESC LIMIT 1", [symbol, lot["date"]]).fetchone()
-        basis = row[0] if row else None
-    if basis is None or lot["seed"]:
-        return basis, []
+    row = con.execute(
+        "SELECT close FROM bronze_prices WHERE symbol = ? AND date <= ? "
+        "ORDER BY date DESC LIMIT 1", [symbol, lot["date"]]).fetchone()
+    market = row[0] if row else None     # Yahoo: already split-adjusted
+    if lot["price"] is None or lot["seed"]:
+        # The stored close is already in today's share terms; a seed is
+        # entered that way. Neither is ever divided.
+        return (lot["price"] if lot["price"] is not None else market), []
     splits = _splits_after(con, symbol, lot["date"])
-    for _, ratio in splits:
-        basis /= ratio
-    return basis, splits
+    ratio = 1.0
+    for _, r in splits:
+        ratio *= r
+    if ratio == 1.0 or market is None:
+        return lot["price"], []
+    # Verify, don't assume: a pre-split fill sits near market * ratio, a
+    # fill already in today's terms near market. Pick the closer one.
+    pre = abs(math.log(lot["price"] / (market * ratio)))
+    post = abs(math.log(lot["price"] / market))
+    if pre < post:
+        return lot["price"] / ratio, splits
+    return lot["price"], []
 
 
 def loss_harvest(con, trades, today=None):

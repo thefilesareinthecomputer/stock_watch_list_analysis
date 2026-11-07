@@ -14,7 +14,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 import pandas as pd
 import pytest
 
-from common.adjustments import adjusted_prices, adjustment_factor
+from common.adjustments import (
+    adjusted_prices, adjustment_factor, max_divergence,
+)
 
 WAREHOUSE = os.path.join(os.path.dirname(__file__), "..", "warehouse", "market.duckdb")
 
@@ -45,6 +47,47 @@ def test_split_halves_prior_prices():
     assert out["adj_close"].iloc[1] == pytest.approx(50.0)
 
 
+def test_split_already_in_the_prices_is_not_applied_again():
+    """Yahoo's close is usually split-adjusted already: no jump across the
+    split date means the split is in the prices, and dividing again would
+    fabricate a 2x jump."""
+    df = _frame([("2026-01-01", 100.0, 0.0, 0.0),
+                 ("2026-01-02", 101.0, 0.0, 2.0)])
+    assert list(adjustment_factor(df)) == [1.0, 1.0]
+
+
+def _with_adj(rows):
+    return pd.DataFrame(rows, columns=["date", "close", "adj_close",
+                                       "dividend", "split_ratio"])
+
+
+def test_yahoo_adjusted_column_decides_a_small_spinoff_ratio():
+    # A 1.066 "split" (a spin-off) on a day the stock also fell 5%: the
+    # price jump alone cannot tell; Yahoo's adj/close ratio staying flat
+    # proves the close already reflects it.
+    df = _with_adj([("2026-01-01", 100.0, 99.0, 0.0, 0.0),
+                    ("2026-01-02", 95.0, 94.05, 0.0, 1.066)])
+    assert adjustment_factor(df).iloc[0] == pytest.approx(1.0)
+
+
+def test_yahoo_adjusted_column_confirms_a_raw_split():
+    # Raw close halves; Yahoo's adjusted close does not -> apply the split.
+    df = _with_adj([("2026-01-01", 100.0, 50.0, 0.0, 0.0),
+                    ("2026-01-02", 50.0, 50.0, 0.0, 2.0)])
+    assert adjustment_factor(df).iloc[0] == pytest.approx(0.5)
+
+
+def test_divergence_from_the_source_is_measured_not_assumed():
+    # Our derived series vs Yahoo's own adjusted close: a double-applied
+    # split shows up as a 50% divergence and must be reported, not hidden.
+    good = _with_adj([("2026-01-01", 100.0, 100.0, 0.0, 0.0),
+                      ("2026-01-02", 101.0, 101.0, 0.0, 0.0)])
+    assert max_divergence(good) == pytest.approx(0.0)
+    wrong = _with_adj([("2026-01-01", 100.0, 50.0, 0.0, 0.0),
+                       ("2026-01-02", 101.0, 101.0, 0.0, 0.0)])
+    assert max_divergence(wrong) == pytest.approx(1.0)  # ours 100 vs 50
+
+
 def test_dividend_reduces_prior_prices_proportionally():
     df = _frame([("2026-01-01", 100.0, 0.0, 0.0),
                  ("2026-01-02", 100.0, 1.0, 0.0)])
@@ -70,13 +113,18 @@ def test_dividend_on_first_row_cannot_be_applied():
 @pytest.mark.skipif(not os.path.exists(WAREHOUSE),
                     reason="local warehouse not built; run scripts/backfill.py")
 @pytest.mark.parametrize("symbol", ["AAPL", "MSFT", "JNJ", "KO", "PG",
-                                    "XOM", "T", "VZ", "ABBV", "CVX"])
+                                    "XOM", "T", "VZ", "ABBV", "CVX",
+                                    "APH", "CRWD", "NFLX"])
 def test_derived_series_reconciles_with_yfinance(symbol):
     """The real check: our factor should reproduce yfinance's adj_close.
 
     Tolerance is 0.5%. Exact agreement is not expected - yfinance rounds and
     occasionally revises its own actions - but systematic divergence would mean
     the adjustment is wrong and every indicator built on it would be too.
+
+    Yahoo's column is captured BEFORE adjusted_prices() runs: that function
+    overwrites adj_close with ours, and comparing ours with ours is how a
+    double-applied split passed this test for months.
     """
     import duckdb
 
@@ -89,11 +137,11 @@ def test_derived_series_reconciles_with_yfinance(symbol):
     if df.empty:
         pytest.skip(f"{symbol} not in the warehouse")
 
+    reference = df.sort_values("date")["adj_close"].astype(float).to_numpy()
     out = adjusted_prices(df)
-    # adjusted_prices() overwrites adj_close with ours, so rebuild the derived
-    # series from the factor and compare against yfinance's stored column.
-    derived = out["close"].astype(float) * out["adj_factor"]
-    reference = out["adj_close"].astype(float)
+    derived = (out["close"].astype(float) * out["adj_factor"]).to_numpy()
+    reference = pd.Series(reference)
+    derived = pd.Series(derived)
     mask = reference.notna() & (reference > 0)
     relative_error = ((derived[mask] - reference[mask]).abs() / reference[mask])
 

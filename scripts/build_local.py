@@ -34,7 +34,12 @@ import duckdb  # noqa: E402
 import pandas as pd  # noqa: E402
 
 from backtest.returns import DECAY_HORIZONS, build_forward_returns  # noqa: E402
-from common.adjustments import adjusted_prices  # noqa: E402
+from common.adjustments import adjusted_prices, max_divergence  # noqa: E402
+
+# Our adjusted closes must match the source's own within this; anything
+# wider is printed by name every build (2026-11-07: a double-applied split
+# hid behind a self-comparing test for months).
+ADJ_TOLERANCE = 0.02
 from common.fundamentals import build_fundamental_tables  # noqa: E402
 from common.indicators import build_signal_series  # noqa: E402
 from common.tables import has_table  # noqa: E402
@@ -52,16 +57,22 @@ WAREHOUSE = os.path.join(ROOT, "warehouse", "market.duckdb")
 
 
 def build_signals(con, symbols, as_of=None):
-    frames, adj_frames = [], []
+    frames, adj_frames, mismatches = [], [], []
     for i, symbol in enumerate(symbols, 1):
+        # adj_close (Yahoo's) is selected as evidence: it decides whether a
+        # split is already in the close, and it is the reconciliation yardstick.
         raw = con.execute(
-            "SELECT date, open, high, low, close, volume, dividend, split_ratio "
-            "FROM bronze_prices WHERE symbol = ? AND date <= ? ORDER BY date",
+            "SELECT date, open, high, low, close, adj_close, volume, dividend, "
+            "split_ratio FROM bronze_prices WHERE symbol = ? AND date <= ? "
+            "ORDER BY date",
             [symbol, as_of or "9999-12-31"]
         ).df()
         if len(raw) < 200:  # indicators need ~200 sessions of warmup
             continue
 
+        divergence = max_divergence(raw)
+        if divergence > ADJ_TOLERANCE:
+            mismatches.append(f"{symbol} {divergence:.1%}")
         adj = adjusted_prices(raw)
         # The backtest fills at next open, so adjusted opens must be stored,
         # not recomputed per query.
@@ -87,6 +98,10 @@ def build_signals(con, symbols, as_of=None):
         if i % 25 == 0:
             print(f"  {i}/{len(symbols)} symbols", flush=True)
 
+    if mismatches:
+        print(f"  ADJUSTMENT MISMATCH vs Yahoo adj_close (> {ADJ_TOLERANCE:.0%};"
+              f" check corporate actions - spin-offs, ADR dividends): "
+              f"{', '.join(mismatches)}", flush=True)
     return (pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(),
             pd.concat(adj_frames, ignore_index=True) if adj_frames else pd.DataFrame())
 

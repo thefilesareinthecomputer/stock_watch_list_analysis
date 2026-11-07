@@ -30,7 +30,8 @@ def _seed_warehouse(con):
     con.execute("""
         CREATE TABLE bronze_prices (
             symbol VARCHAR, date DATE, open DOUBLE, high DOUBLE, low DOUBLE,
-            close DOUBLE, volume BIGINT, dividend DOUBLE, split_ratio DOUBLE)
+            close DOUBLE, adj_close DOUBLE, volume BIGINT, dividend DOUBLE,
+            split_ratio DOUBLE)
     """)
     dates = pd.bdate_range("2023-01-02", periods=320)
     rng = np.random.default_rng(42)
@@ -44,9 +45,9 @@ def _seed_warehouse(con):
             if split:
                 price /= split
             con.execute(
-                "INSERT INTO bronze_prices VALUES (?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO bronze_prices VALUES (?,?,?,?,?,?,?,?,?,?)",
                 [symbol, str(date.date()), price, price * 1.01, price * 0.99,
-                 price, 1_000_000, dividend, split])
+                 price, None, 1_000_000, dividend, split])
 
     con.execute("""
         CREATE TABLE bronze_fundamentals (

@@ -185,24 +185,43 @@ def test_harvest_price_prefers_bronze_over_screening_table():
 
 
 def _split_con():
-    """XYZ bought at 100 on 2026-05-01, split 2-for-1 on 2026-06-10, now 50:
-    an unchanged position, not a 50% loss."""
+    """XYZ traded at 100 on 2026-05-01, split 2-for-1 on 2026-06-10, now 50:
+    an unchanged position, not a 50% loss. Yahoo serves closes already
+    split-adjusted, so the stored close on 2026-05-01 reads 50."""
     con = duckdb.connect()
     con.execute("CREATE TABLE bronze_prices (symbol VARCHAR, date DATE, "
                 "close DOUBLE, split_ratio DOUBLE)")
     con.execute("INSERT INTO bronze_prices VALUES "
-                "('XYZ', DATE '2026-05-01', 100.0, 0.0), "
+                "('XYZ', DATE '2026-05-01', 50.0, 0.0), "
                 "('XYZ', DATE '2026-06-10', 50.0, 2.0), "
                 "('XYZ', DATE '2026-08-11', 50.0, 0.0)")
     return con
 
 
 def test_lot_basis_divides_a_real_fill_by_later_splits():
+    # The user paid 100 per pre-split share; the market close that day in
+    # today's share terms is 50, so 100 is verifiably pre-split.
     (lot,) = open_lots(parse_trades([
         _line(date="2026-05-01", qty=3, price=100.0)]))[("brokerage", "XYZ")]
     basis, splits = lot_basis(_split_con(), lot, "XYZ")
     assert basis == pytest.approx(50.0)
     assert splits == [("2026-06-10", 2.0)]   # surfaced, not silent
+
+
+def test_lot_basis_leaves_a_fill_already_in_todays_share_terms():
+    # A fill entered at 50 matches the day's adjusted close: it is already
+    # post-split terms and dividing again would halve the basis.
+    (lot,) = open_lots(parse_trades([
+        _line(date="2026-05-01", qty=3, price=50.0)]))[("brokerage", "XYZ")]
+    assert lot_basis(_split_con(), lot, "XYZ") == (pytest.approx(50.0), [])
+
+
+def test_lot_basis_never_divides_a_warehouse_close():
+    # No fill price: the basis is the stored close, which Yahoo already
+    # split-adjusted. Dividing it again was the 2026-11-07 double count.
+    (lot,) = open_lots(parse_trades([
+        _line(date="2026-05-01", qty=3)]))[("brokerage", "XYZ")]
+    assert lot_basis(_split_con(), lot, "XYZ") == (pytest.approx(50.0), [])
 
 
 def test_lot_basis_leaves_a_seed_alone_seeds_are_post_split():

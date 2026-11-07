@@ -25,6 +25,30 @@ import numpy as np
 import pandas as pd
 
 
+def _split_is_raw(df, close, split):
+    """Per row: True where the stored close is RAW across that row's split.
+
+    Evidence, strongest first:
+    1. Yahoo's adj_close, when stored: adj/close shifts by the ratio across
+       a split only if close is raw; flat means close already absorbed it.
+       This stays decisive for small spin-off ratios (1.07) on volatile
+       days, where the price jump alone cannot tell.
+    2. The price jump: close[t-1] / close[t] near the ratio means raw; near
+       1 means adjusted.
+    Each test picks whichever hypothesis is closer in log space.
+    """
+    log_r = np.log(split)
+    jump = np.log(close.shift(1) / close)
+    if "adj_close" in df:
+        k = (df["adj_close"].astype(float) / close)
+        k_shift = np.log(k / k.shift(1))      # ~log r if raw, ~0 if adjusted
+        evidence = k_shift.where(k_shift.notna(), jump)
+    else:
+        evidence = jump
+    raw = (evidence - log_r).abs() < evidence.abs()
+    return raw.fillna(False) | (split == 1.0)
+
+
 def adjustment_factor(df: pd.DataFrame) -> pd.Series:
     """Cumulative back-adjustment factor per row, ascending by date.
 
@@ -35,6 +59,10 @@ def adjustment_factor(df: pd.DataFrame) -> pd.Series:
     dividend = df["dividend"].fillna(0.0).astype(float)
     # 0 and NaN both mean "no split" in the source; 1.0 is the identity.
     split = df["split_ratio"].replace(0.0, np.nan).fillna(1.0).astype(float)
+    # Apply a split only where the stored close is shown to be raw across
+    # it. Yahoo normally serves split-ADJUSTED closes, and dividing those
+    # again fabricated 2x-4x jumps on every split (found 2026-11-07).
+    split = split.where(_split_is_raw(df, close, split), 1.0)
 
     prior_close = close.shift(1)
     # A dividend on the first row has no prior close to measure against, so it
@@ -47,6 +75,21 @@ def adjustment_factor(df: pd.DataFrame) -> pd.Series:
     # accumulating, then accumulate from the end backwards.
     future = per_day.shift(-1).fillna(1.0)
     return future[::-1].cumprod()[::-1]
+
+
+def max_divergence(df: pd.DataFrame) -> float:
+    """Worst relative gap between our adjusted close and the source's own
+    adj_close (Yahoo), over rows where the source has one. The build
+    reports every symbol above a threshold, so a wrong adjustment is seen
+    the day it appears instead of hiding inside every indicator."""
+    ordered = df.sort_values("date")
+    reference = ordered["adj_close"].astype(float).to_numpy()
+    ours = (ordered["close"].astype(float)
+            * adjustment_factor(ordered)).to_numpy()
+    mask = ~np.isnan(reference) & (reference > 0)
+    if not mask.any():
+        return 0.0
+    return float(np.max(np.abs(ours[mask] - reference[mask]) / reference[mask]))
 
 
 def adjusted_prices(df: pd.DataFrame) -> pd.DataFrame:

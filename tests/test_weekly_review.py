@@ -155,7 +155,10 @@ def test_split_since_purchase_is_not_a_drawdown_and_is_named():
     against the broker."""
     con = _con()
     con.execute("ALTER TABLE bronze_prices ADD COLUMN split_ratio DOUBLE")
+    # Yahoo's closes are split-adjusted: the fill day reads 50, so a fill
+    # entered at 100 is verifiably in pre-split share terms.
     con.execute("INSERT INTO bronze_prices VALUES "
+                "('HELD1', DATE '2026-05-01', 50.0, 0.0), "
                 "('HELD1', DATE '2026-06-10', 50.0, 2.0)")
     trades = parse_trades([
         '{"date": "2026-05-01", "symbol": "HELD1", "account": "roth ira", '
