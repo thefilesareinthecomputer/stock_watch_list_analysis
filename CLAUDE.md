@@ -10,6 +10,11 @@ breakers) in [`SPEC.md`](SPEC.md). This file is agent guidance only.
   and **stages** git commands for approval - never commits or pushes directly.
 - Prefer architectural polish over more indicators / ML / tickers.
 - Indicator correctness matters: match industry-standard formulas with citations.
+- Data truth: the app always uses real, current data. Never build on an
+  unverified property of the data (adjustment state, freshness, units) -
+  check it against the source, and make reconcile tests compare against the
+  source's own column, never a value our code derived (plan.md gotcha 0j).
+- Before any portfolio advice: refresh the data and read the engine first.
 
 ## Build / test / deploy
 ```bash
