@@ -191,16 +191,44 @@ def _latest_prices(con):
     return prices
 
 
-def _basis(con, lot, key):
-    """A lot's per-share basis: its recorded price, else the close on its
-    trade date (the journal's whole design - prices are knowable from
-    dates). None when neither exists."""
-    if lot["price"] is not None:
-        return lot["price"]
-    row = con.execute(
-        "SELECT close FROM bronze_prices WHERE symbol = ? AND date <= ? "
-        "ORDER BY date DESC LIMIT 1", [key[1], lot["date"]]).fetchone()
-    return row[0] if row else None
+def _splits_after(con, symbol, after):
+    """[(date, ratio)] for splits strictly after `after`, oldest first.
+    Empty when the price table carries no split column (older fixtures)."""
+    has_col = con.execute(
+        "SELECT COUNT(*) FROM information_schema.columns "
+        "WHERE table_name = 'bronze_prices' AND column_name = 'split_ratio'"
+    ).fetchone()[0]
+    if not has_col:
+        return []
+    return [(str(d)[:10], r) for d, r in con.execute(
+        "SELECT date, split_ratio FROM bronze_prices WHERE symbol = ? "
+        "AND date > ? AND split_ratio > 0 AND split_ratio <> 1 "
+        "ORDER BY date", [symbol, after]).fetchall()]
+
+
+def lot_basis(con, lot, symbol):
+    """(per-share basis in today's share terms, splits applied), or
+    (None, []) when no price is knowable.
+
+    The basis is the lot's recorded price, else the raw close on its trade
+    date (prices are knowable from dates). A real fill is priced in the
+    shares of its day, so every later split divides it - without that a
+    2-for-1 reads as a 50% loss. Seeds are entered per share AS HELD TODAY
+    (post-split) and are never adjusted. The splits come back so reports
+    can say a split happened, not just absorb it.
+    """
+    basis = lot["price"]
+    if basis is None:
+        row = con.execute(
+            "SELECT close FROM bronze_prices WHERE symbol = ? AND date <= ? "
+            "ORDER BY date DESC LIMIT 1", [symbol, lot["date"]]).fetchone()
+        basis = row[0] if row else None
+    if basis is None or lot["seed"]:
+        return basis, []
+    splits = _splits_after(con, symbol, lot["date"])
+    for _, ratio in splits:
+        basis /= ratio
+    return basis, splits
 
 
 def loss_harvest(con, trades, today=None):
@@ -229,7 +257,7 @@ def loss_harvest(con, trades, today=None):
             continue
         price, deteriorating = prices[symbol]
         for lot in lots:
-            basis = _basis(con, lot, key)
+            basis, _ = lot_basis(con, lot, symbol)
             if basis is None or price >= basis:
                 continue
             held_days = (today - date.fromisoformat(lot["date"])).days

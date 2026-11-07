@@ -34,7 +34,9 @@ sys.path.insert(0, os.path.join(ROOT, "src"))
 import duckdb  # noqa: E402
 
 from backtest.harness import CAVEATS  # noqa: E402
-from common.trades import load_trades, loss_harvest, open_lots  # noqa: E402
+from common.trades import (  # noqa: E402
+    load_trades, lot_basis, loss_harvest, open_lots,
+)
 from scoring.calls import (  # noqa: E402
     _IN_POSITION, latest_calls, read_rounds, round_scores,
 )
@@ -94,6 +96,7 @@ def held_evidence(con, registry, trades, today, rounds):
             "ret_3m": ret_3m, "ret_12m": ret_12m,
             "stale": False, "exit_breach": False, "below_exit_line": False,
             "score_percentile": None, "harvest": [], "drawdown": None,
+            "splits": [],
         }
 
     tracked_syms = [s for s, e in held.items() if e["tracked"]]
@@ -137,19 +140,25 @@ def held_evidence(con, registry, trades, today, rounds):
             held[flag["symbol"]]["harvest"].append(flag)
 
     # Drawdown-vs-basis where the journal knows the basis: display only.
+    # Bases are split-adjusted (lot_basis): a split is not a drawdown, and
+    # every split since purchase is named in the context line.
     lots_by_symbol = {}
     for (account, sym), lots in open_lots(trades).items():
-        lots_by_symbol.setdefault(sym, []).extend(
-            lot for lot in lots if lot["price"] is not None)
-    for sym, lots in lots_by_symbol.items():
         if sym not in held:
             continue
+        for lot in lots:
+            basis, splits = lot_basis(con, lot, sym)
+            if basis is not None:
+                lots_by_symbol.setdefault(sym, []).append((lot, basis))
+                held[sym]["splits"].extend(
+                    s for s in splits if s not in held[sym]["splits"])
+    for sym, lots in lots_by_symbol.items():
         row = con.execute(
             "SELECT close FROM bronze_prices WHERE symbol = ? "
             "ORDER BY date DESC LIMIT 1", [sym]).fetchone()
-        qty = sum(lot["qty"] for lot in lots)
+        qty = sum(lot["qty"] for lot, _ in lots)
         if row and qty > 0:
-            basis = sum(lot["qty"] * lot["price"] for lot in lots) / qty
+            basis = sum(lot["qty"] * b for lot, b in lots) / qty
             held[sym]["drawdown"] = row[0] / basis - 1.0
 
     return held, latest
@@ -242,6 +251,8 @@ def build_review(con, registry, trades, today, rounds):
             bits.append(f"percentile {e['score_percentile']:.3f}")
         if e["drawdown"] is not None:
             bits.append(f"vs basis {e['drawdown']:+.1%}")
+        for day, ratio in e["splits"]:
+            bits.append(f"split {ratio:g}:1 on {day} (basis adjusted)")
         lines.append(f"- {sym}: " + ", ".join(bits))
     if not held:
         lines.append("- no gold_held_positions table (run build_local.py)")

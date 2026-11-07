@@ -10,7 +10,7 @@ import duckdb
 import pytest
 
 from common.trades import (
-    load_trades, loss_harvest, open_lots, parse_trades, reconcile,
+    load_trades, lot_basis, loss_harvest, open_lots, parse_trades, reconcile,
     share_counts,
 )
 
@@ -182,6 +182,40 @@ def test_harvest_price_prefers_bronze_over_screening_table():
     (flag,) = loss_harvest(con, trades, today=TODAY)
     assert flag["price"] == pytest.approx(25.0)
     assert flag["deteriorating"] is True
+
+
+def _split_con():
+    """XYZ bought at 100 on 2026-05-01, split 2-for-1 on 2026-06-10, now 50:
+    an unchanged position, not a 50% loss."""
+    con = duckdb.connect()
+    con.execute("CREATE TABLE bronze_prices (symbol VARCHAR, date DATE, "
+                "close DOUBLE, split_ratio DOUBLE)")
+    con.execute("INSERT INTO bronze_prices VALUES "
+                "('XYZ', DATE '2026-05-01', 100.0, 0.0), "
+                "('XYZ', DATE '2026-06-10', 50.0, 2.0), "
+                "('XYZ', DATE '2026-08-11', 50.0, 0.0)")
+    return con
+
+
+def test_lot_basis_divides_a_real_fill_by_later_splits():
+    (lot,) = open_lots(parse_trades([
+        _line(date="2026-05-01", qty=3, price=100.0)]))[("brokerage", "XYZ")]
+    basis, splits = lot_basis(_split_con(), lot, "XYZ")
+    assert basis == pytest.approx(50.0)
+    assert splits == [("2026-06-10", 2.0)]   # surfaced, not silent
+
+
+def test_lot_basis_leaves_a_seed_alone_seeds_are_post_split():
+    (lot,) = open_lots(parse_trades([
+        _line(date="2026-05-01", qty=3, price=50.0, seed=True)
+    ]))[("brokerage", "XYZ")]
+    basis, splits = lot_basis(_split_con(), lot, "XYZ")
+    assert basis == pytest.approx(50.0) and splits == []
+
+
+def test_harvest_does_not_flag_a_split_as_a_loss():
+    trades = parse_trades([_line(date="2026-05-01", qty=3, price=100.0)])
+    assert loss_harvest(_split_con(), trades, today=TODAY) == []
 
 
 def test_harvest_infers_missing_basis_from_trade_date_close():

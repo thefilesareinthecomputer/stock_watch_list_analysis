@@ -148,6 +148,24 @@ def test_drawdown_alone_never_justifies_act():
     assert "vs basis -37.5%" in _section(report, "Context per held name")
 
 
+def test_split_since_purchase_is_not_a_drawdown_and_is_named():
+    """A real fill at 100 before a 2-for-1 split, now 50: an unchanged
+    position. The old raw-close-vs-basis math showed -50%; the split must
+    be absorbed into the basis AND surfaced so the user can match it
+    against the broker."""
+    con = _con()
+    con.execute("ALTER TABLE bronze_prices ADD COLUMN split_ratio DOUBLE")
+    con.execute("INSERT INTO bronze_prices VALUES "
+                "('HELD1', DATE '2026-06-10', 50.0, 2.0)")
+    trades = parse_trades([
+        '{"date": "2026-05-01", "symbol": "HELD1", "account": "roth ira", '
+        '"side": "buy", "qty": 4, "price": 100.0}'])
+    report, _ = _build(con, trades)
+    context = _section(report, "Context per held name")
+    assert "vs basis +0.0%" in context
+    assert "split 2:1 on 2026-06-10" in context
+
+
 def test_untracked_held_name_punts_as_screens_only():
     report, _ = _build(_con())
     assert "FUNDX" in _section(report, "Punt")
