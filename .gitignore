@@ -44,6 +44,8 @@ calls_log.jsonl
 trades.jsonl
 # Decision reports - name symbols and held positions
 reports/
+# Guard alert episodes - append-only, name held symbols
+guard_events.jsonl
 
 # Claude Code — per-device, not shared
 .claude/inbox/

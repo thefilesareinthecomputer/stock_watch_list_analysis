@@ -11,6 +11,9 @@ year and kept the one that mattered.
 
 Thresholds are proposals until the user rules on knowledge/RISK-LIMITS.md.
 """
+import json
+import os
+
 import pandas as pd
 
 DEFAULT_LIMITS = {
@@ -21,6 +24,37 @@ DEFAULT_LIMITS = {
     "window": 126,             # sessions in the trailing high
     "stale_sessions": 2,       # sessions without a price = dead or renamed
 }
+
+
+def alert_factors(series, market, limits=None, days=21):
+    """The 'why this alert' context for one holding, shown with every
+    alert so the user weighs it calmly (R6) instead of reacting to a
+    percentage:
+
+    - speed_sigma: the last `days` sessions' move in units of the name's
+      own typical move over that span, measured on the year BEFORE the
+      window so a crash does not inflate its own yardstick. -3 is rare;
+      -6 is a regime break for that name.
+    - vs_market_21d: the name's move minus the market's over the same
+      span. Near zero means the market moved it; far below means it is
+      the name (or its sector).
+    - confirmed: the drawdown line held on each of the last two closes,
+      not just one print.
+    """
+    limits = {**DEFAULT_LIMITS, **(limits or {})}
+    s = series.dropna()
+    m = market.dropna()
+    ret = s.iloc[-1] / s.iloc[-days - 1] - 1.0
+    base = s.pct_change().iloc[-days - 252:-days].dropna()
+    scale = base.std() * (days ** 0.5)
+    m_ret = m.iloc[-1] / m.iloc[-days - 1] - 1.0
+    dd = s / s.rolling(limits["window"], min_periods=1).max() - 1.0
+    return {
+        "ret_21d": ret,
+        "speed_sigma": ret / scale if scale else None,
+        "vs_market_21d": ret - m_ret,
+        "confirmed": bool((dd.iloc[-2:] <= -limits["drawdown"]).all()),
+    }
 
 
 def evaluate_holdings(px, quantities, quote_types, limits=None):
@@ -67,3 +101,65 @@ def evaluate_holdings(px, quantities, quote_types, limits=None):
                 and row["weight"] > limits["single_stock_cap"]):
             row["alerts"].append("size")
     return rows
+
+
+# --- Episodes: each alert fires once per episode, re-arms on recovery. ---
+# The event log lives OUTSIDE the warehouse (which a rebuild erases) as an
+# append-only JSONL, like calls_log.jsonl: {date, symbol, alert, event}.
+
+def load_events(path):
+    """All guard events, oldest first; empty when the log does not exist."""
+    if not os.path.exists(path):
+        return []
+    with open(path) as f:
+        return [json.loads(line) for line in f if line.strip()]
+
+
+def append_events(path, events):
+    """Append events; never rewrites earlier lines."""
+    with open(path, "a") as f:
+        for event in events:
+            f.write(json.dumps(event, sort_keys=True) + "\n")
+
+
+def fold_state(events):
+    """(symbol, alert) -> 'fired' | 'rearmed': the latest event wins."""
+    state = {}
+    for e in events:
+        state[(e["symbol"], e["alert"])] = e["event"]
+    return state
+
+
+def _recovered(alert, row, limits):
+    if alert == "drawdown":
+        return (row["drawdown"] is not None
+                and row["drawdown"] > -limits["drawdown"] / 2)
+    if alert == "size":
+        return (row["weight"] is not None
+                and row["weight"] < limits["single_stock_cap"] * 0.9)
+    return alert not in row["alerts"]          # stale: clears when priced
+
+
+def next_events(rows, state, today, limits=None):
+    """(new events, [(symbol, alert) firing today]) for today's rows.
+
+    An alert fires when raised and not already fired in this episode. A
+    fired alert re-arms only after a real recovery - half the drawdown line
+    back, or weight under 90% of the cap - so a name hovering at the line
+    cannot alert every day.
+    """
+    limits = {**DEFAULT_LIMITS, **(limits or {})}
+    events, firing = [], []
+    for row in rows:
+        sym = row["symbol"]
+        for alert in row["alerts"]:
+            if state.get((sym, alert)) != "fired":
+                events.append({"date": today, "symbol": sym,
+                               "alert": alert, "event": "fired"})
+                firing.append((sym, alert))
+        for (s, alert), status in state.items():
+            if (s == sym and status == "fired" and alert not in row["alerts"]
+                    and _recovered(alert, row, limits)):
+                events.append({"date": today, "symbol": sym,
+                               "alert": alert, "event": "rearmed"})
+    return events, firing

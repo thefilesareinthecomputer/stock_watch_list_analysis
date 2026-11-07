@@ -12,7 +12,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 import pandas as pd
 import pytest
 
-from common.guard import DEFAULT_LIMITS, evaluate_holdings
+from common.guard import (
+    DEFAULT_LIMITS, alert_factors, append_events, evaluate_holdings,
+    fold_state, load_events, next_events,
+)
 
 DATES = pd.bdate_range("2026-01-01", periods=140)
 
@@ -93,6 +96,90 @@ def test_holding_with_no_recent_prices_is_flagged_stale():
     assert rows["DEAD"]["alerts"] == ["stale"]
     assert rows["GONE"]["alerts"] == ["stale"]   # no prices at all
     assert rows["LIVE"]["alerts"] == []
+
+
+def _noisy(n=300, drift=0.0, last_drop=None, seed=1):
+    """A random-walk close series; optionally the last 21 sessions fall by
+    `last_drop` in total."""
+    rng = pd.Series(range(n)).sample(frac=1, random_state=seed).values
+    rets = pd.Series(((rng % 7) - 3) / 1000.0 + drift)  # +-0.3% daily
+    if last_drop is not None:
+        rets.iloc[-21:] = (1 + last_drop) ** (1 / 21) - 1
+    return pd.Series((1 + rets).cumprod().values * 100.0,
+                     index=pd.bdate_range("2025-06-02", periods=n))
+
+
+def test_speed_measures_the_month_against_the_stocks_own_swings():
+    calm = alert_factors(_noisy(), _noisy(seed=2))
+    crash = alert_factors(_noisy(last_drop=-0.30), _noisy(seed=2))
+    assert abs(calm["speed_sigma"]) < 2
+    assert crash["speed_sigma"] < -5     # a -30% month in a 0.3%-a-day name
+
+
+def test_move_versus_market_separates_stock_from_market():
+    stock = _noisy(last_drop=-0.20)
+    market = _noisy(seed=2, last_drop=-0.05)
+    f = alert_factors(stock, market)
+    assert f["vs_market_21d"] == pytest.approx(-0.20 - (-0.05), abs=0.01)
+
+
+def test_confirmed_needs_two_closes_past_the_line():
+    base = [100.0] * 130
+    once = pd.Series(base + [100.0, 75.0],
+                     index=pd.bdate_range("2026-01-01", periods=132))
+    twice = pd.Series(base + [78.0, 75.0],
+                      index=pd.bdate_range("2026-01-01", periods=132))
+    spy = pd.Series([100.0] * 132, index=once.index)
+    assert alert_factors(once, spy)["confirmed"] is False
+    assert alert_factors(twice, spy)["confirmed"] is True
+
+
+def _row(symbol="AAA", alerts=(), drawdown=0.0, weight=0.05):
+    return {"symbol": symbol, "alerts": list(alerts), "drawdown": drawdown,
+            "weight": weight}
+
+
+def test_an_alert_fires_once_per_episode():
+    events, fired = next_events([_row(alerts=["drawdown"], drawdown=-0.25)],
+                                fold_state([]), "2026-10-13")
+    assert fired == [("AAA", "drawdown")]
+    state = fold_state(events)
+    events2, fired2 = next_events([_row(alerts=["drawdown"], drawdown=-0.30)],
+                                  state, "2026-10-14")
+    assert fired2 == [] and events2 == []   # still the same episode
+
+
+def test_drawdown_rearms_only_after_recovering_half_the_line():
+    state = fold_state([{"date": "2026-10-13", "symbol": "AAA",
+                         "alert": "drawdown", "event": "fired"}])
+    # Back to -12%: under the 20% line but not recovered past -10%.
+    events, _ = next_events([_row(drawdown=-0.12)], state, "2026-10-20")
+    assert events == []
+    events, _ = next_events([_row(drawdown=-0.08)], state, "2026-10-27")
+    assert events == [{"date": "2026-10-27", "symbol": "AAA",
+                       "alert": "drawdown", "event": "rearmed"}]
+    _, fired = next_events([_row(alerts=["drawdown"], drawdown=-0.21)],
+                           fold_state(events), "2026-11-02")
+    assert fired == [("AAA", "drawdown")]   # a new episode fires again
+
+
+def test_size_rearms_below_ninety_percent_of_the_cap():
+    state = fold_state([{"date": "2026-10-13", "symbol": "AAA",
+                         "alert": "size", "event": "fired"}])
+    assert next_events([_row(weight=0.095)], state, "2026-10-14")[0] == []
+    events, _ = next_events([_row(weight=0.085)], state, "2026-10-15")
+    assert events[0]["event"] == "rearmed"
+
+
+def test_event_log_is_append_only_jsonl(tmp_path):
+    path = tmp_path / "guard_events.jsonl"
+    first = [{"date": "2026-10-13", "symbol": "AAA", "alert": "drawdown",
+              "event": "fired"}]
+    append_events(path, first)
+    append_events(path, [{**first[0], "date": "2026-10-27",
+                          "event": "rearmed"}])
+    assert [e["event"] for e in load_events(path)] == ["fired", "rearmed"]
+    assert load_events(tmp_path / "missing.jsonl") == []
 
 
 def test_default_limits_are_the_proposed_risk_memo_values():
