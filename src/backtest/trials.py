@@ -20,9 +20,10 @@ is how the count stops being honest.
 Intents are free text and the file is public in the repo: describe the
 methodology question, never positions or private context.
 """
-import json
 import os
 from datetime import datetime, timezone
+
+from common.jsonl import append_jsonl, read_jsonl
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 TRIAL_LOG = os.path.join(ROOT, "trial_log.jsonl")
@@ -40,8 +41,7 @@ def log_trial(table, signal_col, horizons, cost_bps, intent, path=TRIAL_LOG):
         "cost_bps": cost_bps,
         "intent": intent,
     }
-    with open(path, "a") as f:
-        f.write(json.dumps(entry) + "\n")
+    append_jsonl(path, [entry], sort_keys=False)
     return number
 
 
@@ -55,7 +55,4 @@ def trial_count(path=TRIAL_LOG):
 
 def read_trials(path=TRIAL_LOG):
     """The full log as a list of dicts, oldest first."""
-    if not os.path.exists(path):
-        return []
-    with open(path) as f:
-        return [json.loads(line) for line in f if line.strip()]
+    return read_jsonl(path)

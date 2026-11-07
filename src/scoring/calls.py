@@ -23,6 +23,7 @@ import os
 import pandas as pd
 
 from common.config import BENCHMARK_TICKERS
+from common.jsonl import append_jsonl, read_jsonl
 from scoring.variants import component_sql
 from scoring.tiers import scored_variant
 
@@ -179,10 +180,7 @@ def build_round(scores, prior_calls, registry, expectation, run_id,
 
 def read_rounds(path=CALLS_LOG):
     """All recorded rounds, oldest first."""
-    if not os.path.exists(path):
-        return []
-    with open(path) as f:
-        return [json.loads(line) for line in f if line.strip()]
+    return read_jsonl(path)
 
 
 def latest_calls(rounds):
@@ -210,8 +208,7 @@ def emit_round(round_entry, path=CALLS_LOG):
                 for r in read_rounds(path)}
     if key in recorded:
         return False
-    with open(path, "a") as f:
-        f.write(json.dumps(round_entry, sort_keys=True) + "\n")
+    append_jsonl(path, [round_entry])
     return True
 
 

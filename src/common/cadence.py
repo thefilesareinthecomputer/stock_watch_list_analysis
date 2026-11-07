@@ -10,27 +10,21 @@ No model sits in this path. Every step is an idempotent script, so a run
 cut short by sleep is simply rerun.
 """
 import fcntl
-import json
-import os
 from contextlib import contextmanager
+
+from common.jsonl import append_jsonl, read_jsonl
 
 
 class RunLocked(RuntimeError):
     """Another cadence run holds the lock."""
 
 
-def load_ledger(path):
-    """All ledger entries, oldest first; empty when the ledger is absent."""
-    if not os.path.exists(path):
-        return []
-    with open(path) as f:
-        return [json.loads(line) for line in f if line.strip()]
+load_ledger = read_jsonl
 
 
 def append_ledger(path, entry):
     """Append one run record; earlier lines are never rewritten."""
-    with open(path, "a") as f:
-        f.write(json.dumps(entry, sort_keys=True) + "\n")
+    append_jsonl(path, [entry])
 
 
 def daily_due(ledger, session):

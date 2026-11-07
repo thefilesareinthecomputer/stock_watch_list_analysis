@@ -27,6 +27,7 @@ from datetime import date
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "src"))
 
+from common.jsonl import append_jsonl  # noqa: E402
 from common.positions import (  # noqa: E402
     POSITIONS_PATH, apply_fill, load_positions,
 )
@@ -36,12 +37,6 @@ from common.trades import (  # noqa: E402
 
 WAREHOUSE = os.path.join(ROOT, "warehouse", "market.duckdb")
 RELAY = os.path.join(ROOT, "_relay.md")
-
-
-def _append(path, entries):
-    with open(path, "a") as f:
-        for e in entries:
-            f.write(json.dumps(e) + "\n")
 
 
 def record(side, symbol, qty, account, when, price=None, note="",
@@ -58,7 +53,7 @@ def record(side, symbol, qty, account, when, price=None, note="",
     text = open(positions_path).read() if os.path.exists(positions_path) else ""
     delta = qty if side == "buy" else -qty
     new_text = apply_fill(text, account, entry["symbol"], delta)
-    _append(trades_path, [entry])
+    append_jsonl(trades_path, [entry], sort_keys=False)
     with open(positions_path, "w") as f:
         f.write(new_text)
     return entry
@@ -88,7 +83,7 @@ def seed(relay_path=RELAY, trades_path=TRADES_LOG,
         raise ValueError("seed lots disagree with the snapshot: "
                          + "; ".join(bad))
     raw = [json.loads(l) for l in m.group(1).splitlines() if l.strip()]
-    _append(trades_path, raw)
+    append_jsonl(trades_path, raw, sort_keys=False)
     return len(raw)
 
 

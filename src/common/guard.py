@@ -11,10 +11,9 @@ year and kept the one that mattered.
 
 Thresholds are proposals until the user rules on knowledge/RISK-LIMITS.md.
 """
-import json
-import os
-
 import pandas as pd
+
+from common.jsonl import append_jsonl, read_jsonl
 
 DEFAULT_LIMITS = {
     "drawdown": 0.20,          # fraction below the window high
@@ -107,19 +106,8 @@ def evaluate_holdings(px, quantities, quote_types, limits=None):
 # The event log lives OUTSIDE the warehouse (which a rebuild erases) as an
 # append-only JSONL, like calls_log.jsonl: {date, symbol, alert, event}.
 
-def load_events(path):
-    """All guard events, oldest first; empty when the log does not exist."""
-    if not os.path.exists(path):
-        return []
-    with open(path) as f:
-        return [json.loads(line) for line in f if line.strip()]
-
-
-def append_events(path, events):
-    """Append events; never rewrites earlier lines."""
-    with open(path, "a") as f:
-        for event in events:
-            f.write(json.dumps(event, sort_keys=True) + "\n")
+load_events = read_jsonl
+append_events = append_jsonl
 
 
 def fold_state(events):
