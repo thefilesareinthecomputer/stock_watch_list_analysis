@@ -142,7 +142,10 @@ first_seen`. A split is recorded once, on first sight, and the writer has no
 path that alters or removes a row: a source that later reports a different
 ratio for a logged event is returned to the caller as a conflict and the log
 keeps what it first saw. Adjusted series are derived from `bronze_prices`
-plus this log, never stored as evidence.
+plus this log, never stored as evidence. When a later fetch serves a different
+close for a session already stored, the difference is recorded once in
+`source_revisions` (stored and served values, first seen) and the stored row
+stands.
 
 **Silver - validated.** Deduped, typed, conformed. SCD2 where attributes change
 over time (fundamentals, keyed by `attr_hash` so unchanged replays do not create

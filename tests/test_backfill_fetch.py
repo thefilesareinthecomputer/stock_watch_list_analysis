@@ -292,6 +292,60 @@ def test_new_rows_are_stored_in_traded_terms(monkeypatch):
         (datetime.date(2026, 8, 10), 52.0, 1000)]
 
 
+# --- source revisions: a restated stored session is logged, never applied
+
+
+def _revisions(con):
+    return con.execute("SELECT symbol, date, stored_close, source_close "
+                       "FROM source_revisions ORDER BY date").fetchall()
+
+
+def test_a_changed_close_in_the_overlap_is_logged_and_bronze_keeps_its_value(
+        monkeypatch, capsys):
+    import datetime
+
+    import backfill
+
+    con = _traded_warehouse()
+    monkeypatch.setattr(backfill, "_fetch", lambda b, s: _bars(
+        "AAA", {"2026-08-06": 99.0, "2026-08-07": 100.0}))
+    backfill.backfill_prices(con, ["AAA"], "2026-08-01")
+    monkeypatch.setattr(backfill, "_fetch", lambda b, s: _bars(
+        "AAA", {"2026-08-06": 99.0, "2026-08-07": 50.0, "2026-08-10": 101.0}))
+    backfill.backfill_prices(con, ["AAA"], "2026-08-01")
+
+    assert _revisions(con) == [("AAA", datetime.date(2026, 8, 7), 100.0, 50.0)]
+    assert _stored(con, "AAA")[1][1] == 100.0
+    out = capsys.readouterr().out
+    assert "SOURCE REVISION AAA 2026-08-07: stored 100.0000, source now 50.0000" in out
+
+
+def test_an_unchanged_overlap_logs_no_revision(monkeypatch):
+    import backfill
+
+    con = _traded_warehouse()
+    bars = _bars("AAA", {"2026-08-06": 99.0, "2026-08-07": 100.0})
+    monkeypatch.setattr(backfill, "_fetch", lambda b, s: bars)
+    backfill.backfill_prices(con, ["AAA"], "2026-08-01")
+    backfill.backfill_prices(con, ["AAA"], "2026-08-01")
+    assert _revisions(con) == []
+
+
+def test_the_same_revision_is_logged_once_across_days(monkeypatch, capsys):
+    import backfill
+
+    con = _traded_warehouse()
+    monkeypatch.setattr(backfill, "_fetch", lambda b, s: _bars(
+        "AAA", {"2026-08-07": 100.0}))
+    backfill.backfill_prices(con, ["AAA"], "2026-08-01")
+    monkeypatch.setattr(backfill, "_fetch", lambda b, s: _bars(
+        "AAA", {"2026-08-07": 50.0}))
+    backfill.backfill_prices(con, ["AAA"], "2026-08-01")
+    backfill.backfill_prices(con, ["AAA"], "2026-08-01")   # next day, same restatement
+    assert len(_revisions(con)) == 1
+    assert capsys.readouterr().out.count("SOURCE REVISION") == 1
+
+
 def test_known_symbols_fetch_from_the_overlap_and_new_ones_from_start(monkeypatch):
     import backfill
 

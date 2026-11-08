@@ -42,6 +42,7 @@ from common.quality import (  # noqa: E402
 )
 from common.run_context import new_run_id, now_ts  # noqa: E402
 from common.security import ensure_quote_types  # noqa: E402
+from common.source_revisions import TOLERANCE, record_revisions  # noqa: E402
 from common.traded_prices import to_traded  # noqa: E402
 from common.warehouse_meta import (  # noqa: E402
     BRONZE_TERMS, TRADED, bronze_is_traded, set_meta,
@@ -178,6 +179,27 @@ def _traded_rows(con, df):
         ignore_index=True)
 
 
+def _log_revisions(con, df, last):
+    """Overlap rows (sessions already stored) whose served close, in traded
+    terms, differs from the stored close. Each is logged once in
+    source_revisions and printed; bronze keeps the stored value."""
+    newest = df["symbol"].map(last)
+    overlap = df[newest.notna() & (df["date"] <= newest)]
+    if overlap.empty:
+        return []
+    con.register("overlap", overlap[["symbol", "date", "close"]])
+    diffs = con.execute(
+        f"SELECT o.symbol, o.date, p.close, o.close FROM overlap o "
+        f"JOIN {TABLE} p USING (symbol, date) "
+        f"WHERE ABS(p.close - o.close) > {TOLERANCE} ORDER BY 1, 2").fetchall()
+    con.unregister("overlap")
+    new = record_revisions(con, diffs)
+    for symbol, day, stored, source in new:
+        print(f"  SOURCE REVISION {symbol} {day}: stored {stored:.4f}, source "
+              f"now {source:.4f} - stored value kept", flush=True)
+    return new
+
+
 def _store_new_sessions(con, df, last, run_id, ingest_ts):
     """Insert the rows newer than each symbol's stored history; return the
     count. Overlap rows (already stored) are never written."""
@@ -240,6 +262,7 @@ def backfill_prices(con, symbols, start):
         if not df.empty:
             record_splits(con, df)
             df = _traded_rows(con, df)
+            _log_revisions(con, df, last)
             total += _store_new_sessions(con, df, last, run_id, ingest_ts)
 
         done += len(batch)
