@@ -150,6 +150,18 @@ close for a session already stored, the difference is recorded once in
 `source_revisions` (stored and served values, first seen) and the stored row
 stands.
 
+**Converting a served row to traded terms.** The source serves history
+restated for the splits it knows at fetch time, so a row is converted back
+by the splits dated after it and on or before its capture vintage (the newest
+session in its `_run_id`); history banked once before a split and never
+refetched is already in traded terms and is left alone. The source does not
+always restate: across a decisive split (ratio at least 15% from 1) a served
+close that jumps by the ratio was never restated, and that split is left out
+of the conversion and printed as SPLIT NOT RESTATED BY SOURCE
+(`common.traded_prices.unrestated_events`; three such events in the 2026-11-08
+migration). A dividend paid on a split day is measured against the prior
+close brought into that day's terms.
+
 **Share-terms rule.** Every stored price is in its own session's share terms
 and every filed share count in its `shares_date` terms. A comparison across
 dates, or of a price against a share count, must first bring both sides into
@@ -160,7 +172,10 @@ and journaled fills through the split factor from the log
 lives). Same-session comparisons need no conversion. `bronze_prices.split_ratio`
 is kept as raw evidence of what the source said and is read only by the
 backfill that records it into the log; `tests/test_split_terms_policy.py`
-pins that. Consumers today: indicators, forward returns, the guard and
+pins that. Where the source's own adjusted column is wrong for a symbol (it
+served a split unrestated, or lists an action it never applies), the ruling
+is recorded in `src/common/source_defects.json` and the daily proof report
+lists that symbol as known rather than as attention. Consumers today: indicators, forward returns, the guard and
 held-position returns read `silver_adjusted_prices`; the candidate earnings
 yield and the trade journal (`load_trades(con)`, `scripts/trade.py record`)
 use the split factor; latest-close reads need nothing; the broad-universe

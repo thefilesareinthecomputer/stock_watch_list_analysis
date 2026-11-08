@@ -46,7 +46,7 @@ uv run python scripts/cadence.py run            # the daily chain launchd runs (
 uv run python scripts/cadence.py install        # print the launchd plist; --yes writes ~/Library/LaunchAgents and loads it
 uv run python scripts/trade.py buy SYM QTY --account "A"  # record a fill: trades.jsonl + POSITIONS.md together (also sell/seed/show)
 uv run python scripts/backfill_universe.py      # broad universe + line of sight (monthly)
-uv run python scripts/migrate_traded_prices.py  # one-time: bronze to traded closes; rollback copy to ~/backups/<repo>/market_<date>.duckdb first (--backup-dir overrides)
+uv run python scripts/migrate_traded_prices.py  # one-time: bronze to traded closes; rollback copy to ~/backups/<repo>/market_<date>.duckdb first (standard: ~/.agents/specs/BACKUPS.md)
 uv run pytest tests/test_engine_parity.py -q    # same SQL, both engines
 ```
 EDGAR needs a contact User-Agent: `EDGAR_USER_AGENT` in `.env`, falling back to

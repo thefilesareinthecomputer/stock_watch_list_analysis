@@ -84,6 +84,46 @@ def test_old_revisions_are_not_todays_news():
     assert dict((n, ok) for n, ok, _ in checks)["source revisions (24h)"]
 
 
+def _mismatching_warehouse():
+    """DEF: 220 sessions at a flat 10.0 close with adj_close equal to close,
+    and a 2-for-1 logged mid-series. Our adjusted series halves the earlier
+    rows; the source's adj_close does not, so the referee reads 50%."""
+    import pandas as pd
+
+    con = _warehouse()
+    days = pd.bdate_range(end="2026-11-06", periods=220)
+    con.executemany(
+        "INSERT INTO bronze_prices (symbol, date, close, adj_close, dividend, "
+        "_run_id) VALUES ('DEF', ?, 10.0, 10.0, 0.0, 'r')",
+        [[d.date()] for d in days])
+    record_actions(con, [{"symbol": "DEF", "date": days[110].date(), "ratio": 2.0}],
+                   source="test")
+    return con
+
+
+def test_a_new_adjustment_mismatch_is_attention(monkeypatch):
+    monkeypatch.setattr(data_proof, "known_defects", lambda check: {})
+    name, ok, detail = data_proof.check_adjustment(_mismatching_warehouse())
+    assert not ok and detail.startswith("1 new of 1: DEF 50.0%")
+
+
+def test_a_ruled_source_defect_is_known_not_attention(monkeypatch):
+    monkeypatch.setattr(data_proof, "known_defects", lambda check: {
+        "DEF": {"symbol": "DEF", "check": check, "ruled": "2026-11-08"}})
+    name, ok, detail = data_proof.check_adjustment(_mismatching_warehouse())
+    assert ok
+    assert "no new mismatch" in detail
+    assert "known source defects 1: DEF 50.0% (ruled 2026-11-08)" in detail
+
+
+def test_the_ruled_defects_file_is_well_formed():
+    from common.source_defects import load_defects
+
+    for d in load_defects():
+        assert {"symbol", "check", "sessions", "ruled", "note"} <= set(d)
+        assert d["check"] == "adjustment mismatch"
+
+
 def test_cadence_runs_the_report_after_the_build():
     import cadence
 

@@ -1,0 +1,26 @@
+{
+  "purpose": "Source-side defects ruled on after investigation. The daily data-proof report lists a check failure for one of these symbols under 'known' instead of raising attention, so the report keeps signaling only what is new. Each entry says what the source does, what our data does, and how that was verified.",
+  "defects": [
+    {
+      "symbol": "MNST",
+      "check": "adjustment mismatch",
+      "sessions": "2026-08-03 to 2026-08-07",
+      "ruled": "2026-11-08",
+      "note": "Captured on 2026-08-12 and 2026-08-16 while the source still served pre-split closes and adj_close unrestated for the 2-for-1 of 2026-08-11; the source restated them later (checked 2026-11-08). Stored closes are the traded prices; the source's adj_close for those sessions is stale, so the referee reads 50% there."
+    },
+    {
+      "symbol": "FWONK",
+      "check": "adjustment mismatch",
+      "sessions": "before 2016-04-18",
+      "ruled": "2026-11-08",
+      "note": "The source lists a 1.366 corporate action on 2016-04-18 that its own close and adj_close never apply (the served close moved by the ratio that day). Stored closes are as traded; our adjusted series applies every logged action, so it differs from the source's by that factor before the event."
+    },
+    {
+      "symbol": "FTAI",
+      "check": "adjustment mismatch",
+      "sessions": "before 2022-08-02",
+      "ruled": "2026-11-08",
+      "note": "The source lists a 1.171 corporate action on 2022-08-02 that its own series never apply. Same treatment as FWONK."
+    }
+  ]
+}

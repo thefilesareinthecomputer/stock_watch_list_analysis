@@ -15,7 +15,8 @@ with its count and the symbols it names:
 - known closes: bronze against the published closes in
   tests/fixtures/known_closes.json
 - adjustment mismatch: symbols whose derived adjusted series diverges from
-  Yahoo's adj_close beyond the build tolerance
+  Yahoo's adj_close beyond the build tolerance; a symbol ruled on in
+  src/common/source_defects.json is listed as known, not as attention
 
 A clean day states "all checks passed" with the vintage date. The exit code
 is always 0: the report informs, the guard that follows decides.
@@ -40,6 +41,7 @@ from common.corporate_actions import splits_for  # noqa: E402
 from common.known_closes import check_known_closes  # noqa: E402
 from common.positions import daily_symbols, held_symbols, load_positions  # noqa: E402
 from common.quality import completed_session_cutoff, last_trading_session  # noqa: E402
+from common.source_defects import known_defects  # noqa: E402
 from common.source_revisions import revisions_since  # noqa: E402
 from common.tables import has_table  # noqa: E402
 from common.warehouse_meta import bronze_is_traded  # noqa: E402
@@ -125,19 +127,27 @@ def check_adjustment(con):
     symbols = [s for (s,) in con.execute(
         f"SELECT symbol FROM bronze_prices GROUP BY symbol "
         f"HAVING COUNT(*) >= {WARMUP_ROWS} ORDER BY symbol").fetchall()]
-    bad = []
+    ruled = known_defects("adjustment mismatch")
+    bad, known = [], []
     for symbol in symbols:
         raw = con.execute(
             "SELECT date, close, adj_close, dividend, _run_id FROM bronze_prices "
             "WHERE symbol = ? ORDER BY date", [symbol]).df()
         divergence = max_divergence(raw, splits_for(con, symbol))
-        if divergence > ADJ_TOLERANCE:
+        if divergence <= ADJ_TOLERANCE:
+            continue
+        if symbol in ruled:
+            known.append(f"{symbol} {divergence:.1%} (ruled {ruled[symbol]['ruled']})")
+        else:
             bad.append((divergence, f"{symbol} {divergence:.1%}"))
     bad.sort(reverse=True)
     named = [text for _, text in bad]
+    detail = (f"{len(named)} new of {len(symbols)}: {_names(named)}" if named
+              else f"no new mismatch across {len(symbols)} symbols")
+    if known:
+        detail += f"; known source defects {len(known)}: {_names(known)}"
     return (f"adjustment mismatch (> {ADJ_TOLERANCE:.0%} vs Yahoo adj_close)",
-            not named, f"{len(named)} of {len(symbols)}: {_names(named)}" if named
-            else f"all {len(symbols)} symbols within tolerance")
+            not named, detail)
 
 
 def run_checks(con, symbols, held, now=None):
