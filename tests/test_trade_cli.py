@@ -59,11 +59,58 @@ def _paths(tmp_path):
     return str(tmp_path / "trades.jsonl"), str(positions)
 
 
+def _warehouse(tmp_path):
+    """XYZ traded at 100 on 2026-05-01 and split 2-for-1 on 2026-06-10."""
+    import duckdb
+
+    from common.corporate_actions import record_actions
+
+    path = str(tmp_path / "market.duckdb")
+    con = duckdb.connect(path)
+    con.execute("CREATE TABLE bronze_prices (symbol VARCHAR, date DATE, close DOUBLE)")
+    con.execute("INSERT INTO bronze_prices VALUES ('XYZ', DATE '2026-05-01', 100.0), "
+                "('XYZ', DATE '2026-06-10', 50.0)")
+    record_actions(con, [{"symbol": "XYZ", "date": "2026-06-10", "ratio": 2.0}],
+                   source="test")
+    con.close()
+    return path
+
+
+def test_record_keeps_the_fill_as_it_happened_and_moves_the_snapshot_in_current_terms(
+        tmp_path, capsys):
+    trades_path, positions_path = _paths(tmp_path)
+    entry = trade.record("buy", "XYZ", 3, "BROKERAGE STOCK", "2026-05-01",
+                         price=100.0, trades_path=trades_path,
+                         positions_path=positions_path, warehouse=_warehouse(tmp_path))
+    assert entry["qty"] == 3 and entry["price"] == 100.0      # the journal: as filled
+    assert "XYZ 16" in open(positions_path).read()             # 10 + 3 x 2 today
+    assert "split 2-for-1 after 2026-05-01" in capsys.readouterr().out
+
+
+def test_record_warns_when_the_price_is_far_from_that_sessions_close(tmp_path, capsys):
+    trades_path, positions_path = _paths(tmp_path)
+    trade.record("buy", "XYZ", 1, "BROKERAGE STOCK", "2026-06-10", price=100.0,
+                 trades_path=trades_path, positions_path=positions_path,
+                 warehouse=_warehouse(tmp_path))
+    out = capsys.readouterr().out
+    assert "far from the 2026-06-10 close 50.00" in out
+    assert "XYZ 11" in open(positions_path).read()             # no split after
+
+
+def test_record_without_a_warehouse_applies_the_fill_as_given(tmp_path):
+    trades_path, positions_path = _paths(tmp_path)
+    trade.record("buy", "XYZ", 3, "BROKERAGE STOCK", "2026-05-01", price=100.0,
+                 trades_path=trades_path, positions_path=positions_path,
+                 warehouse=str(tmp_path / "missing.duckdb"))
+    assert "XYZ 13" in open(positions_path).read()
+
+
 def test_record_appends_journal_and_updates_positions(tmp_path):
     trades_path, positions_path = _paths(tmp_path)
     entry = trade.record("buy", "xyz", 3, "BROKERAGE STOCK", "2026-08-21",
                          price=12.5, note="per round 08-10",
-                         trades_path=trades_path, positions_path=positions_path)
+                         trades_path=trades_path, positions_path=positions_path,
+                         warehouse=str(tmp_path / "none.duckdb"))
     assert entry["symbol"] == "XYZ" and entry["price"] == 12.5
     (line,) = open(trades_path).read().splitlines()
     assert json.loads(line) == entry and "seed" not in entry
@@ -73,7 +120,8 @@ def test_record_appends_journal_and_updates_positions(tmp_path):
 def test_record_sell_without_price_omits_it(tmp_path):
     trades_path, positions_path = _paths(tmp_path)
     entry = trade.record("sell", "XYZ", 10, "BROKERAGE STOCK", "2026-08-21",
-                         trades_path=trades_path, positions_path=positions_path)
+                         trades_path=trades_path, positions_path=positions_path,
+                         warehouse=str(tmp_path / "none.duckdb"))
     assert "price" not in entry
     assert "XYZ" not in open(positions_path).read()
 
@@ -82,7 +130,8 @@ def test_record_rejects_before_writing_anything(tmp_path):
     trades_path, positions_path = _paths(tmp_path)
     with pytest.raises(ValueError):
         trade.record("sell", "XYZ", 99, "BROKERAGE STOCK", "2026-08-21",
-                     trades_path=trades_path, positions_path=positions_path)
+                     trades_path=trades_path, positions_path=positions_path,
+                     warehouse=str(tmp_path / "none.duckdb"))
     assert not os.path.exists(trades_path)
     assert open(positions_path).read() == POSITIONS
 

@@ -18,7 +18,7 @@ import pytest
 
 from common import corporate_actions as ca
 from common.corporate_actions import (
-    ensure_table, record_actions, splits_for,
+    ensure_table, record_actions, split_factor, splits_for, splits_map,
 )
 
 SPLIT = {"symbol": "xyz", "date": "2024-06-10", "ratio": 10.0}
@@ -135,6 +135,42 @@ def test_splits_for_is_oldest_first_and_per_symbol(con):
         (date(2021, 7, 20), 4.0), (date(2024, 6, 10), 10.0)]
     assert splits_for(con, "ABC") == [(date(2020, 8, 31), 4.0)]
     assert splits_for(con, "none") == []
+
+
+def test_splits_map_groups_per_symbol_and_tolerates_no_table(con):
+    record_actions(con, [
+        {"symbol": "xyz", "date": "2024-06-10", "ratio": 10.0},
+        {"symbol": "xyz", "date": "2021-07-20", "ratio": 4.0},
+        {"symbol": "abc", "date": "2020-08-31", "ratio": 4.0},
+    ], source="yfinance")
+    assert splits_map(con, ["xyz", "ABC", "none"]) == {
+        "XYZ": [(date(2021, 7, 20), 4.0), (date(2024, 6, 10), 10.0)],
+        "ABC": [(date(2020, 8, 31), 4.0)]}
+    assert splits_map(con, []) == {}
+    assert splits_map(duckdb.connect(), ["XYZ"]) == {}
+
+
+SPLITS = [(date(2021, 7, 20), 4.0), (date(2024, 6, 10), 10.0)]
+
+
+@pytest.mark.parametrize("start, end, expected", [
+    ("2020-01-02", None, 40.0),             # both splits lie ahead
+    ("2021-07-20", None, 10.0),             # the split-date row is post-split
+    ("2024-06-10", None, 1.0),
+    ("2020-01-02", "2022-01-03", 4.0),      # only the split inside the window
+    ("2022-01-03", "2020-01-02", 0.25),     # backwards: inverse
+    ("2024-06-11", "2020-01-02", 1 / 40),
+])
+def test_split_factor_counts_splits_strictly_after_start_through_end(
+        start, end, expected):
+    assert split_factor(SPLITS, start, end) == pytest.approx(expected)
+
+
+def test_split_factor_accepts_dates_timestamps_and_strings():
+    import pandas as pd
+    assert split_factor(SPLITS, date(2020, 1, 2)) == 40.0
+    assert split_factor(SPLITS, pd.Timestamp("2020-01-02")) == 40.0
+    assert split_factor([], "2020-01-02") == 1.0
 
 
 def test_writer_exposes_no_update_or_delete_path():

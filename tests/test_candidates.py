@@ -12,6 +12,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 import duckdb
 import pytest
 
+from common.corporate_actions import record_actions
 from scoring.candidates import build_candidate_signals
 
 ASOF = "2024-06-03"
@@ -20,8 +21,7 @@ ASOF = "2024-06-03"
 def _con():
     con = duckdb.connect(":memory:")
     con.execute("""
-        CREATE TABLE bronze_prices (
-            symbol VARCHAR, date DATE, close DOUBLE, split_ratio DOUBLE)
+        CREATE TABLE bronze_prices (symbol VARCHAR, date DATE, close DOUBLE)
     """)
     con.execute("""
         CREATE TABLE silver_signals (symbol VARCHAR, as_of_date DATE)
@@ -38,9 +38,14 @@ def _con():
     return con
 
 
-def _price(con, symbol, date, close, split=None):
-    con.execute("INSERT INTO bronze_prices VALUES (?, ?, ?, ?)",
-                [symbol, date, close, split])
+def _price(con, symbol, date, close):
+    con.execute("INSERT INTO bronze_prices VALUES (?, ?, ?)",
+                [symbol, date, close])
+
+
+def _split(con, symbol, date, ratio):
+    record_actions(con, [{"symbol": symbol, "date": date, "ratio": ratio}],
+                   source="test")
 
 
 def _signal(con, symbol, date=ASOF):
@@ -100,37 +105,49 @@ def test_missing_fundamentals_stay_null_and_do_not_distort_ranks():
     assert _row(con, "B")["roe_pct"] == 0.0
 
 
-def test_earnings_yield_uses_split_adjusted_shares():
+def test_earnings_yield_brings_filed_shares_to_the_scoring_date():
+    # Closes are as traded: 200 before the 2-for-1, 100 after. The count
+    # filed before the split (100) is 200 shares on the scoring date, so
+    # market cap there is 100 * 200 = 20000.
     con = _con()
     _signal(con, "S")
     _price(con, "S", "2024-02-01", 200.0)
-    _price(con, "S", "2024-04-01", 100.0, split=2.0)  # 2-for-1 after filing
+    _price(con, "S", "2024-04-01", 100.0)
+    _split(con, "S", "2024-04-01", 2.0)              # 2-for-1 after filing
     _price(con, "S", ASOF, 100.0)
     _metrics(con, "S", "2024-02-01", net_income=1000.0, shares=100.0,
              shares_date="2024-02-01")
     build_candidate_signals(con)
-
-    # Market cap must use 200 post-split shares: 100 * (close 100) * 2.
     assert _row(con, "S")["earnings_yield"] == pytest.approx(1000.0 / 20000.0)
 
 
-def test_a_split_after_the_scoring_date_does_not_leak_into_its_yield():
-    """Yahoo's closes are split-adjusted to TODAY's share count, so a
-    date before a later 2-for-1 already shows the post-split price (100,
-    not the 200 it traded at). Market cap there is that price times the
-    share count in today's terms (200), not the count as filed (100) -
-    using the split as of the date doubled every pre-split yield."""
+def test_a_split_after_the_scoring_date_does_not_touch_its_yield():
+    """On a date before the split the close is the 200 it traded at and the
+    filed count (100) is in the same terms: market cap 20000, the same as
+    after the split. A split after the scoring date is not knowable then
+    and must not move the yield (look-ahead)."""
     con = _con()
     before = "2024-03-01"
     _signal(con, "S", before)
-    _price(con, "S", "2024-02-01", 100.0)
-    _price(con, "S", before, 100.0)
-    _price(con, "S", "2024-04-01", 100.0, split=2.0)   # after the date
+    _price(con, "S", "2024-02-01", 200.0)
+    _price(con, "S", before, 200.0)
+    _price(con, "S", "2024-04-01", 100.0)
+    _split(con, "S", "2024-04-01", 2.0)              # after the date
     _metrics(con, "S", "2024-02-01", net_income=1000.0, shares=100.0,
              shares_date="2024-02-01")
     build_candidate_signals(con)
     assert _row(con, "S", before)["earnings_yield"] == pytest.approx(
         1000.0 / 20000.0)
+
+
+def test_no_split_log_means_no_share_conversion():
+    con = _con()
+    _signal(con, "S")
+    _price(con, "S", ASOF, 100.0)
+    _metrics(con, "S", "2024-02-01", net_income=1000.0, shares=100.0,
+             shares_date="2024-02-01")
+    build_candidate_signals(con)                   # creates an empty log
+    assert _row(con, "S")["earnings_yield"] == pytest.approx(1000.0 / 10000.0)
 
 
 def test_stale_share_count_nulls_earnings_yield():

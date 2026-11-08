@@ -171,7 +171,7 @@ def main():
     registry = load_registry()
     con = duckdb.connect(WAREHOUSE)
     status = run_rebalance(con, registry, date.today(),
-                           off_cycle=args.off_cycle, trades=load_trades())
+                           off_cycle=args.off_cycle, trades=load_trades(con=con))
     con.close()
 
     print(f"settled vintages: {status['settled']}")

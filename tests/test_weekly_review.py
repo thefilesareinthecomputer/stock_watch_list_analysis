@@ -154,12 +154,14 @@ def test_split_since_purchase_is_not_a_drawdown_and_is_named():
     be absorbed into the basis AND surfaced so the user can match it
     against the broker."""
     con = _con()
-    con.execute("ALTER TABLE bronze_prices ADD COLUMN split_ratio DOUBLE")
-    # Yahoo's closes are split-adjusted: the fill day reads 50, so a fill
-    # entered at 100 is verifiably in pre-split share terms.
+    # Bronze holds the closes that traded (100 on the fill day) and the
+    # split is an event in the log; the fill is restated from the log.
     con.execute("INSERT INTO bronze_prices VALUES "
-                "('HELD1', DATE '2026-05-01', 50.0, 0.0), "
-                "('HELD1', DATE '2026-06-10', 50.0, 2.0)")
+                "('HELD1', DATE '2026-05-01', 100.0), "
+                "('HELD1', DATE '2026-06-10', 50.0)")
+    from common.corporate_actions import record_actions
+    record_actions(con, [{"symbol": "HELD1", "date": "2026-06-10", "ratio": 2.0}],
+                   source="test")
     trades = parse_trades([
         '{"date": "2026-05-01", "symbol": "HELD1", "account": "roth ira", '
         '"side": "buy", "qty": 4, "price": 100.0}'])

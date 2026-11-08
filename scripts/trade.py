@@ -19,6 +19,7 @@ quantities must match the snapshot, and it refuses to run twice.
 """
 import argparse
 import json
+import math
 import os
 import re
 import sys
@@ -27,6 +28,7 @@ from datetime import date
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "src"))
 
+from common.corporate_actions import split_factor, splits_for  # noqa: E402
 from common.jsonl import append_jsonl  # noqa: E402
 from common.positions import (  # noqa: E402
     POSITIONS_PATH, apply_fill, load_positions,
@@ -39,10 +41,44 @@ WAREHOUSE = os.path.join(ROOT, "warehouse", "market.duckdb")
 RELAY = os.path.join(ROOT, "_relay.md")
 
 
+def _current_terms_factor(symbol, when, price, warehouse):
+    """Shares-per-share factor from the fill date's share terms to current
+    terms, from the corporate_actions log (1.0 without a warehouse). Also
+    warns when a recorded price sits far from that session's close: the
+    likeliest cause is a price typed in the wrong share terms or date."""
+    if not os.path.exists(warehouse):
+        return 1.0
+    import duckdb
+    con = duckdb.connect(warehouse, read_only=True)
+    try:
+        splits = splits_for(con, symbol)
+        factor = split_factor(splits, when)
+        if price is not None:
+            row = con.execute(
+                "SELECT date, close FROM bronze_prices WHERE symbol = ? "
+                "AND date <= ? ORDER BY date DESC LIMIT 1", [symbol, when]).fetchone()
+            if row and row[1] and abs(math.log(price / row[1])) > math.log(1.25):
+                print(f"warning: {symbol} price {price:g} is far from the "
+                      f"{row[0]} close {row[1]:.2f} - check the share terms "
+                      "and the date before trusting this lot's basis")
+    finally:
+        con.close()
+    if factor != 1.0:
+        print(f"note: {symbol} split {factor:g}-for-1 after {when}; the journal "
+              f"keeps the fill as it happened and the snapshot moves by the "
+              f"quantity times {factor:g}")
+    return factor
+
+
 def record(side, symbol, qty, account, when, price=None, note="",
-           trades_path=TRADES_LOG, positions_path=POSITIONS_PATH):
+           trades_path=TRADES_LOG, positions_path=POSITIONS_PATH,
+           warehouse=WAREHOUSE):
     """Validate, then write journal line + snapshot update. Returns the
-    journal entry. Nothing is written if either validation fails."""
+    journal entry. Nothing is written if either validation fails.
+
+    The journal line is the fill as it happened, in its date's share
+    terms; the snapshot is in current terms, so a fill dated before a
+    logged split moves the snapshot by the split-restated quantity."""
     entry = {"date": when, "symbol": symbol.upper(), "account": account,
              "side": side, "qty": qty}
     if price is not None:
@@ -50,8 +86,9 @@ def record(side, symbol, qty, account, when, price=None, note="",
     if note:
         entry["note"] = note
     parse_trades([json.dumps(entry)])
+    factor = _current_terms_factor(entry["symbol"], when, price, warehouse)
     text = open(positions_path).read() if os.path.exists(positions_path) else ""
-    delta = qty if side == "buy" else -qty
+    delta = (qty if side == "buy" else -qty) * factor
     new_text = apply_fill(text, account, entry["symbol"], delta)
     append_jsonl(trades_path, [entry], sort_keys=False)
     with open(positions_path, "w") as f:
@@ -101,7 +138,15 @@ def _warn_unknown(symbol):
 
 
 def show():
-    trades = load_trades(TRADES_LOG)
+    con = None
+    if os.path.exists(WAREHOUSE):
+        import duckdb
+        con = duckdb.connect(WAREHOUSE, read_only=True)
+    try:
+        trades = load_trades(TRADES_LOG, con=con)   # fills in current terms
+    finally:
+        if con is not None:
+            con.close()
     positions = load_positions(POSITIONS_PATH)
     for (account, symbol), lots in sorted(open_lots(trades).items()):
         desc = ", ".join(

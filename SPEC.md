@@ -150,6 +150,25 @@ close for a session already stored, the difference is recorded once in
 `source_revisions` (stored and served values, first seen) and the stored row
 stands.
 
+**Share-terms rule.** Every stored price is in its own session's share terms
+and every filed share count in its `shares_date` terms. A comparison across
+dates, or of a price against a share count, must first bring both sides into
+one frame. Prices do that through `silver_adjusted_prices` (derived from
+`bronze_prices` plus `corporate_actions`, rebuilt each build); share counts
+and journaled fills through the split factor from the log
+(`common.corporate_actions.split_factor`, the one place that arithmetic
+lives). Same-session comparisons need no conversion. `bronze_prices.split_ratio`
+is kept as raw evidence of what the source said and is read only by the
+backfill that records it into the log; `tests/test_split_terms_policy.py`
+pins that. Consumers today: indicators, forward returns, the guard and
+held-position returns read `silver_adjusted_prices`; the candidate earnings
+yield and the trade journal (`load_trades(con)`, `scripts/trade.py record`)
+use the split factor; latest-close reads need nothing; the broad-universe
+screen (`bronze_prices_broad`) is Yahoo's adjusted window replaced whole on
+each refresh and feeds only ratios. The Databricks ingestion jobs still take
+Yahoo's adjusted close (`auto_adjust=True`); they are the other engine and
+their conclusions are bounded by snapshotting (P1), not by this rule.
+
 **Silver - validated.** Deduped, typed, conformed. SCD2 where attributes change
 over time (fundamentals, keyed by `attr_hash` so unchanged replays do not create
 phantom versions). Silver is where point-in-time resolution happens.

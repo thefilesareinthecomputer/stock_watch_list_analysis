@@ -98,3 +98,50 @@ def splits_for(con, symbol):
     return con.execute(
         f"SELECT date, ratio FROM {TABLE} WHERE symbol = ? AND type = 'split' "
         "ORDER BY date", [symbol.strip().upper()]).fetchall()
+
+
+def splits_map(con, symbols):
+    """{symbol: [(date, ratio)]} for the given symbols that have logged
+    splits, each list oldest first. Empty without the table."""
+    symbols = sorted({s.strip().upper() for s in symbols})
+    if not symbols or not has_table(con, TABLE):
+        return {}
+    marks = ", ".join("?" for _ in symbols)
+    out = {}
+    for symbol, day, ratio in con.execute(
+            f"SELECT symbol, date, ratio FROM {TABLE} WHERE type = 'split' "
+            f"AND symbol IN ({marks}) ORDER BY symbol, date", symbols).fetchall():
+        out.setdefault(symbol, []).append((day, ratio))
+    return out
+
+
+def _as_date(value):
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    return date.fromisoformat(str(value)[:10])
+
+
+def split_factor(splits, start, end=None):
+    """Shares-per-share factor that restates a figure known in the share
+    terms of `start` into the terms of `end` (default: after every logged
+    split, i.e. current terms). Quantities multiply by it, prices divide.
+
+    The splits dated in (start, end] count; when `end` precedes `start`
+    those in (end, start] count inversely. This is the one place the
+    share-terms arithmetic lives: `to_traded` (prices stored), the trade
+    journal (fills) and the candidate yields (filed share counts) all
+    reduce to it. `splits` is [(date, ratio)] as returned by splits_for.
+    """
+    start = _as_date(start)
+    end = _as_date(end) if end is not None else None
+    factor = 1.0
+    for day, ratio in splits:
+        day = _as_date(day)
+        if end is None or end >= start:
+            if start < day and (end is None or day <= end):
+                factor *= float(ratio)
+        elif end < day <= start:
+            factor /= float(ratio)
+    return factor

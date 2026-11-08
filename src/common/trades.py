@@ -17,11 +17,11 @@ Malformed entries fail loudly, same argument as positions.parse_positions:
 a silently skipped fill would corrupt every lot computed after it.
 """
 import json
-import math
 import os
 from datetime import date, timedelta
 
-from common.tables import has_column, has_table
+from common.corporate_actions import split_factor, splits_for, splits_map
+from common.tables import has_table
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 TRADES_LOG = os.path.join(ROOT, "trades.jsonl")
@@ -90,12 +90,19 @@ def parse_trades(lines):
     return trades
 
 
-def load_trades(path=TRADES_LOG):
-    """Trades from disk; empty on machines without the private file."""
+def load_trades(path=TRADES_LOG, con=None):
+    """Trades from disk; empty on machines without the private file. With
+    a warehouse connection every fill is restated to current share terms
+    from the corporate_actions log (restate_to_current_terms); without one
+    the fills are as journaled, in their trade dates' terms."""
     if not os.path.exists(path):
         return []
     with open(path) as f:
-        return parse_trades(f.readlines())
+        trades = parse_trades(f.readlines())
+    if con is not None:
+        trades = restate_to_current_terms(
+            trades, splits_map(con, {t["symbol"] for t in trades}))
+    return trades
 
 
 def share_counts(trades):
@@ -143,7 +150,8 @@ def open_lots(trades):
         if t["side"] == "buy":
             lots.setdefault(key, []).append(
                 {"qty": t["qty"], "price": t["price"], "date": t["date"],
-                 "seed": t["seed"]})
+                 "seed": t["seed"], "split_factor": t.get("split_factor", 1.0),
+                 "splits": t.get("splits", [])})
             continue
         remaining = t["qty"]
         queue = lots.get(key, [])
@@ -191,50 +199,57 @@ def _latest_prices(con):
     return prices
 
 
-def _splits_after(con, symbol, after):
-    """[(date, ratio)] for splits strictly after `after`, oldest first.
-    Empty when the price table carries no split column (older fixtures)."""
-    if not has_column(con, "bronze_prices", "split_ratio"):
-        return []
-    return [(str(d)[:10], r) for d, r in con.execute(
-        "SELECT date, split_ratio FROM bronze_prices WHERE symbol = ? "
-        "AND date > ? AND split_ratio > 0 AND split_ratio <> 1 "
-        "ORDER BY date", [symbol, after]).fetchall()]
+def restate_to_current_terms(trades, splits_by_symbol):
+    """Trades with every real fill restated to current share terms.
+
+    A fill is journaled as it happened, in its trade date's share terms.
+    Here its quantity is multiplied, and its price divided, by the factor
+    of the splits logged after that date, so FIFO, share counts and bases
+    all live in one frame with the holdings snapshot. Seeds are entered in
+    current terms and only gain the marker. Every trade gains
+    `split_factor` and `splits` (the events applied) so reports can say a
+    split happened rather than absorb it. Idempotent: a trade already
+    carrying `split_factor` is returned as is.
+    """
+    out = []
+    for t in trades:
+        if "split_factor" in t:
+            out.append(t)
+            continue
+        t = dict(t)
+        logged = splits_by_symbol.get(t["symbol"], []) if not t["seed"] else []
+        factor = split_factor(logged, t["date"])
+        t["split_factor"] = factor
+        t["splits"] = [(str(d)[:10], float(r)) for d, r in logged
+                       if str(d)[:10] > t["date"]]
+        if factor != 1.0:
+            t["qty"] = t["qty"] * factor
+            if t["price"] is not None:
+                t["price"] = t["price"] / factor
+        out.append(t)
+    return out
 
 
 def lot_basis(con, lot, symbol):
-    """(per-share basis in today's share terms, splits applied), or
-    (None, []) when no price is knowable.
+    """(per-share basis in current share terms, splits after the lot date)
+    or (None, []) when no price is knowable.
 
-    The basis is the lot's recorded price, else the stored close on its
-    trade date (prices are knowable from dates; Yahoo's close is already
-    split-adjusted, so it is never divided). A recorded fill is divided by
-    later splits only when it verifiably sits at pre-split terms - without
-    that a 2-for-1 reads as a 50% loss. Seeds are entered per share AS HELD TODAY
-    (post-split) and are never adjusted. The splits come back so reports
-    can say a split happened, not just absorb it.
+    A lot from load_trades(con) is already restated, so a recorded price
+    is the basis as it stands (seeds are entered in current terms). Without
+    a price the basis is the stored close on or before the trade date,
+    which bronze holds in that session's own terms, restated by the splits
+    logged after that session.
     """
+    splits = lot.get("splits", [])
+    if lot["price"] is not None:
+        return lot["price"], splits
     row = con.execute(
-        "SELECT close FROM bronze_prices WHERE symbol = ? AND date <= ? "
+        "SELECT date, close FROM bronze_prices WHERE symbol = ? AND date <= ? "
         "ORDER BY date DESC LIMIT 1", [symbol, lot["date"]]).fetchone()
-    market = row[0] if row else None     # Yahoo: already split-adjusted
-    if lot["price"] is None or lot["seed"]:
-        # The stored close is already in today's share terms; a seed is
-        # entered that way. Neither is ever divided.
-        return (lot["price"] if lot["price"] is not None else market), []
-    splits = _splits_after(con, symbol, lot["date"])
-    ratio = 1.0
-    for _, r in splits:
-        ratio *= r
-    if ratio == 1.0 or market is None:
-        return lot["price"], []
-    # Verify, don't assume: a pre-split fill sits near market * ratio, a
-    # fill already in today's terms near market. Pick the closer one.
-    pre = abs(math.log(lot["price"] / (market * ratio)))
-    post = abs(math.log(lot["price"] / market))
-    if pre < post:
-        return lot["price"] / ratio, splits
-    return lot["price"], []
+    if row is None:
+        return None, splits
+    day, close = row
+    return close / split_factor(splits_for(con, symbol), day), splits
 
 
 def loss_harvest(con, trades, today=None):
@@ -251,6 +266,10 @@ def loss_harvest(con, trades, today=None):
     seeds post-split numbers, which approximate basis is anyway.
     """
     today = today or date.today()
+    # Fills must be in current share terms before FIFO and basis; a no-op
+    # for trades load_trades(con) already restated.
+    trades = restate_to_current_terms(
+        trades, splits_map(con, {t["symbol"] for t in trades}))
     cutoff = str(today - timedelta(days=WASH_SALE_DAYS))
     recent_buys = {t["symbol"] for t in trades
                    if t["side"] == "buy" and not t["seed"]

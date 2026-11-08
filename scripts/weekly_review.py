@@ -34,9 +34,10 @@ sys.path.insert(0, os.path.join(ROOT, "src"))
 import duckdb  # noqa: E402
 
 from backtest.harness import CAVEATS  # noqa: E402
+from common.corporate_actions import splits_map  # noqa: E402
 from common.tables import has_table  # noqa: E402
 from common.trades import (  # noqa: E402
-    load_trades, lot_basis, loss_harvest, open_lots,
+    load_trades, lot_basis, loss_harvest, open_lots, restate_to_current_terms,
 )
 from scoring.calls import (  # noqa: E402
     _IN_POSITION, latest_calls, read_rounds, round_scores,
@@ -130,13 +131,17 @@ def held_evidence(con, registry, trades, today, rounds):
                         and call_state.get(row.symbol) in _IN_POSITION):
                     held[row.symbol]["exit_breach"] = True
 
+    # Fills in current share terms (share-terms rule, SPEC 5.1); a no-op
+    # for trades load_trades(con) already restated.
+    trades = restate_to_current_terms(
+        trades, splits_map(con, {t["symbol"] for t in trades}))
     for flag in loss_harvest(con, trades, today=today):
         if flag["symbol"] in held:
             held[flag["symbol"]]["harvest"].append(flag)
 
     # Drawdown-vs-basis where the journal knows the basis: display only.
-    # Bases are split-adjusted (lot_basis): a split is not a drawdown, and
-    # every split since purchase is named in the context line.
+    # Bases are in current terms (lot_basis): a split is not a drawdown,
+    # and every split since purchase is named in the context line.
     lots_by_symbol = {}
     for (account, sym), lots in open_lots(trades).items():
         if sym not in held:
@@ -277,8 +282,8 @@ def main():
     con = duckdb.connect(WAREHOUSE)
     registry = load_registry()
     today = date.today()
-    report, state_rows = build_review(con, registry, load_trades(), today,
-                                      read_rounds())
+    report, state_rows = build_review(con, registry, load_trades(con=con),
+                                      today, read_rounds())
     record_state(con, today, state_rows)
     con.close()
     os.makedirs(REPORTS_DIR, exist_ok=True)

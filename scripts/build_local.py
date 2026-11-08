@@ -221,7 +221,7 @@ def main():
 
     # Trade journal (SPEC-FIRST-ACTIONABLE-ROUND): mismatches warn, never
     # fail - POSITIONS.md stays the holdings source of truth.
-    for warning in reconcile(load_trades(), positions):
+    for warning in reconcile(load_trades(con=con), positions):
         print(f"  JOURNAL MISMATCH: {warning}")
 
     rows, syms, lo, hi = con.execute(

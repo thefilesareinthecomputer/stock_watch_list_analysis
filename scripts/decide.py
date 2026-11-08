@@ -124,7 +124,7 @@ def build_report(con, rounds, trades, today):
 
 def main():
     con = duckdb.connect(WAREHOUSE, read_only=True)
-    report = build_report(con, read_rounds(), load_trades(), date.today())
+    report = build_report(con, read_rounds(), load_trades(con=con), date.today())
     con.close()
     os.makedirs(REPORTS_DIR, exist_ok=True)
     path = os.path.join(REPORTS_DIR, f"decision_{date.today()}.md")
