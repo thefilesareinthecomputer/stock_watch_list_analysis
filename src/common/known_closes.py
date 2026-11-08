@@ -8,8 +8,8 @@ gate, the test suite and the daily data-proof report all run it.
 import json
 import os
 
-from common.corporate_actions import splits_for
-from common.traded_prices import to_traded
+from common.corporate_actions import split_factor, splits_for
+from common.tables import has_column
 from common.warehouse_meta import bronze_is_traded
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -30,15 +30,24 @@ def check_known_closes(con, rows=None, tolerance=TOLERANCE):
     traded = bronze_is_traded(con)
     out = []
     for row in rows:
-        frame = con.execute(
-            "SELECT date, close FROM bronze_prices WHERE symbol = ? AND date = ?",
-            [row["symbol"], row["date"]]).df()
-        if frame.empty:
+        hit = con.execute(
+            "SELECT close FROM bronze_prices WHERE symbol = ? AND date = ?",
+            [row["symbol"], row["date"]]).fetchone()
+        if hit is None:
             out.append((row["symbol"], row["date"], row["close"], None, "absent"))
             continue
+        stored = float(hit[0])
         if not traded:
-            frame = to_traded(frame, splits_for(con, row["symbol"]))
-        stored = float(frame["close"].iloc[0])
+            # Served terms: restated for the splits the row's capture run
+            # knew, i.e. those on or before that run's newest session
+            # (every split when the table carries no runs).
+            vintage = None
+            if has_column(con, "bronze_prices", "_run_id"):
+                vintage = con.execute(
+                    "SELECT MAX(date) FROM bronze_prices WHERE symbol = ? AND _run_id = "
+                    "(SELECT _run_id FROM bronze_prices WHERE symbol = ? AND date = ?)",
+                    [row["symbol"], row["symbol"], row["date"]]).fetchone()[0]
+            stored *= split_factor(splits_for(con, row["symbol"]), row["date"], vintage)
         ok = abs(stored - row["close"]) < tolerance
         out.append((row["symbol"], row["date"], row["close"], stored,
                     "ok" if ok else "FAIL"))

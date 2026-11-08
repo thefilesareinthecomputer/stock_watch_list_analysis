@@ -19,6 +19,7 @@ refuses a warehouse whose bronze is still in served terms
 (warehouse_meta.bronze_terms): run scripts/migrate_traded_prices.py first.
 """
 import argparse
+import math
 import os
 import sys
 from datetime import date, timedelta
@@ -43,7 +44,7 @@ from common.quality import (  # noqa: E402
 from common.run_context import new_run_id, now_ts  # noqa: E402
 from common.security import ensure_quote_types  # noqa: E402
 from common.source_revisions import TOLERANCE, record_revisions  # noqa: E402
-from common.traded_prices import to_traded  # noqa: E402
+from common.traded_prices import to_traded, unrestated_events, without  # noqa: E402
 from common.warehouse_meta import (  # noqa: E402
     BRONZE_TERMS, TRADED, bronze_is_traded, set_meta,
 )
@@ -172,11 +173,18 @@ def _last_stored(con, symbols):
 
 def _traded_rows(con, df):
     """Fetched rows converted to traded terms, symbol by symbol, using the
-    split log (which record_splits has just brought up to date)."""
-    return pd.concat(
-        [to_traded(sub, splits_for(con, symbol))
-         for symbol, sub in df.groupby("symbol", sort=False)],
-        ignore_index=True)
+    split log (which record_splits has just brought up to date). A decisive
+    split the source served unrestated is printed and left out."""
+    frames = []
+    for symbol, sub in df.groupby("symbol", sort=False):
+        splits = splits_for(con, symbol)
+        events = unrestated_events(sub, splits)
+        for day, ratio, jump in events:
+            print(f"  SPLIT NOT RESTATED BY SOURCE {symbol} {str(day)[:10]} ratio "
+                  f"{ratio:g}: served close moved {math.exp(jump) - 1:+.1%}; "
+                  "left as served", flush=True)
+        frames.append(to_traded(sub, without(splits, events)))
+    return pd.concat(frames, ignore_index=True)
 
 
 def _log_revisions(con, df, last):
@@ -201,10 +209,16 @@ def _log_revisions(con, df, last):
 
 
 def _store_new_sessions(con, df, last, run_id, ingest_ts):
-    """Insert the rows newer than each symbol's stored history; return the
-    count. Overlap rows (already stored) are never written."""
-    newest = df["symbol"].map(last)
-    new = df[newest.isna() | (df["date"] > newest)].copy()
+    """Insert the fetched rows bronze does not hold yet (newer sessions and
+    gaps inside the fetched window); return the count. Rows already stored
+    are never written."""
+    symbols = sorted(set(df["symbol"]))
+    marks = ", ".join("?" for _ in symbols)
+    stored = set(con.execute(
+        f"SELECT symbol, date FROM {TABLE} WHERE symbol IN ({marks}) "
+        "AND date >= ?", [*symbols, df["date"].min()]).fetchall())
+    keep = [(s, d) not in stored for s, d in zip(df["symbol"], df["date"])]
+    new = df[keep].copy()
     if new.empty:
         return 0
     new["_run_id"] = run_id

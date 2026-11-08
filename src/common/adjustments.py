@@ -13,9 +13,11 @@ METHOD (standard back-adjustment)
 
     adj_close[t] = close[t] * PROD over all i > t of  (1 - D_i / C_[i-1]) / S_i
 
-where D_i is the dividend paid on day i, C_[i-1] the prior close, and S_i the
-split ratio effective on day i (2.0 for a 2-for-1, taken from the log). Only
-actions strictly AFTER t affect the price at t.
+where D_i is the dividend paid on day i (per share in that day's terms),
+C_[i-1] the prior close brought into day i's terms (divided by S_i when the
+split lands that day), and S_i the split ratio effective on day i (2.0 for a
+2-for-1, taken from the log). Only actions strictly AFTER t affect the price
+at t.
 
 RECONCILIATION. Yahoo's own adj_close is stored with each row as captured and
 is the independent yardstick. It knows only the actions up to its capture
@@ -55,7 +57,11 @@ def adjustment_factor(df: pd.DataFrame, splits) -> pd.Series:
     prior_close = close.shift(1)
     # A dividend on the first row has no prior close to measure against, so it
     # cannot be applied; treat it as no adjustment rather than dividing by NaN.
-    div_ratio = (1.0 - dividend / prior_close).fillna(1.0)
+    # The dividend is per share in the paying day's terms; when a split lands
+    # the same day the prior close (pre-split terms) is first brought into
+    # those terms, so a spin-off or special distribution paired with a
+    # reverse split reconciles instead of reading as a 30% gap.
+    div_ratio = (1.0 - dividend * split / prior_close).fillna(1.0)
     per_day = div_ratio / split
 
     # Only actions strictly after t adjust the price at t, so shift up before

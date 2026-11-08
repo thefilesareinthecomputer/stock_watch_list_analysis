@@ -13,16 +13,19 @@ Order of operations, each gated on the one before:
    one home-level directory, one folder per repo, dated files inside,
    never inside a repo; a rollback copy, deleted once the migration is
    verified.
-3. In ONE transaction: run every split symbol's pre-split rows through
-   common.traded_prices.to_traded and write open/high/low/close/dividend/
-   volume back; check the known closes; confirm the row count; set
-   warehouse_meta bronze_terms = traded. Any failed check rolls back.
+3. In ONE transaction: run every split symbol's rows through
+   common.traded_prices.to_traded (each row restated only for the splits
+   its capture run had absorbed, and never for a split the source served
+   unrestated) and write open/high/low/close/dividend/volume back; check
+   the known closes; confirm the row count; set warehouse_meta
+   bronze_terms = traded. Any failed check rolls back.
 4. Write reports/migration_traded_prices_<date>.md with the evidence.
 
 adj_close and the lineage columns are left as they were. After this the
 backfill appends new sessions in traded terms and never rewrites a row.
 """
 import argparse
+import math
 import os
 import shutil
 import sys
@@ -35,7 +38,7 @@ import duckdb  # noqa: E402
 
 from common.corporate_actions import splits_for  # noqa: E402
 from common.known_closes import load_known_closes  # noqa: E402
-from common.traded_prices import to_traded  # noqa: E402
+from common.traded_prices import to_traded, unrestated_events, without  # noqa: E402
 from common.warehouse_meta import (  # noqa: E402
     BRONZE_TERMS, TRADED, bronze_is_traded, set_meta,
 )
@@ -88,32 +91,37 @@ def _backup(warehouse, backup_dir, today, before):
 
 
 def _convert(con):
-    """Rewrite each split symbol's pre-split rows in traded terms.
-    Returns {symbol: rows changed}."""
+    """Rewrite each split symbol's rows in traded terms, honoring each
+    row's capture vintage and leaving out splits the source never restated.
+    Returns ({symbol: rows changed}, [(symbol, date, ratio, jump)] skipped)."""
     symbols = [s for (s,) in con.execute(
         f"SELECT DISTINCT c.symbol FROM corporate_actions c "
         f"JOIN (SELECT DISTINCT symbol FROM {TABLE}) p USING (symbol) "
         "ORDER BY 1").fetchall()]
-    changed = {}
+    changed, skipped = {}, []
     for symbol in symbols:
         splits = splits_for(con, symbol)
-        last_split = max(day for day, _ in splits)
         rows = con.execute(
-            f"SELECT symbol, date, open, high, low, close, dividend, volume "
-            f"FROM {TABLE} WHERE symbol = ? AND date < ? ORDER BY date",
-            [symbol, last_split]).df()
+            f"SELECT symbol, date, open, high, low, close, dividend, volume, "
+            f"_run_id FROM {TABLE} WHERE symbol = ? ORDER BY date",
+            [symbol]).df()
         if rows.empty:
             continue
-        converted = to_traded(rows, splits)
-        con.register("converted", converted)
+        events = unrestated_events(rows, splits)
+        skipped += [(symbol, str(d)[:10], r, j) for d, r, j in events]
+        converted = to_traded(rows, without(splits, events))
+        moved = converted["close"].to_numpy() != rows["close"].to_numpy()
+        if not moved.any():
+            continue
+        con.register("converted", converted.loc[moved].drop(columns="_run_id"))
         con.execute(
             f"UPDATE {TABLE} SET open = c.open, high = c.high, low = c.low, "
             "close = c.close, dividend = c.dividend, volume = c.volume "
             f"FROM converted c WHERE {TABLE}.symbol = c.symbol "
             f"AND {TABLE}.date = c.date")
         con.unregister("converted")
-        changed[symbol] = len(rows)
-    return changed
+        changed[symbol] = int(moved.sum())
+    return changed, skipped
 
 
 def _check_known_closes(con):
@@ -134,7 +142,7 @@ def _check_known_closes(con):
     return results
 
 
-def _write_report(path, backup, before, after, changed, known):
+def _write_report(path, backup, before, after, changed, known, skipped):
     lines = [
         f"# bronze_prices migration to traded closes - {date.today()}", "",
         f"Backup: `{backup}` (opens read-only; fingerprint matches pre-migration)", "",
@@ -142,7 +150,12 @@ def _write_report(path, backup, before, after, changed, known):
         f"| before | {before[0]} | {before[1]} |",
         f"| after | {after[0]} | {after[1]} |", "",
         f"Rows rewritten: {sum(changed.values())} across {len(changed)} symbols "
-        "(only rows dated before each symbol's last logged split).", "",
+        "(rows before a logged split that their capture run had already "
+        "absorbed; rows captured before a split were already in traded terms).", "",
+        "Splits the source served unrestated (served close jumped by the ratio; "
+        f"left out of the conversion): {len(skipped)}", "",
+        "| symbol | split | ratio | served jump |", "|---|---|---|---|",
+        *[f"| {s} | {d} | {r:g} | {math.exp(j) - 1:+.1%} |" for s, d, r, j in skipped], "",
         "| known close | published | stored | result |", "|---|---|---|---|",
         *[f"| {s} {d} | {p} | {'' if v is None else f'{v:.4f}'} | {r} |"
           for s, d, p, v, r in known], "",
@@ -172,7 +185,7 @@ def migrate(warehouse=WAREHOUSE, backup_dir=BACKUP_DIR, reports_dir=REPORTS,
 
     con = duckdb.connect(warehouse)
     con.begin()
-    changed = _convert(con)
+    changed, skipped = _convert(con)
     known = _check_known_closes(con)
     after = fingerprint(con)
     if after[0] != before[0]:
@@ -184,11 +197,15 @@ def migrate(warehouse=WAREHOUSE, backup_dir=BACKUP_DIR, reports_dir=REPORTS,
 
     os.makedirs(reports_dir, exist_ok=True)
     report_path = os.path.join(reports_dir, f"migration_traded_prices_{today}.md")
-    _write_report(report_path, backup, before, after, changed, known)
+    _write_report(report_path, backup, before, after, changed, known, skipped)
+    for symbol, day, ratio, jump in skipped:
+        print(f"  SPLIT NOT RESTATED BY SOURCE {symbol} {day} ratio {ratio:g}: "
+              f"served close moved {math.exp(jump) - 1:+.1%}; left as served")
     print(f"migrated {sum(changed.values())} rows across {len(changed)} symbols; "
           f"rows {before[0]} -> {after[0]}\n  backup {backup}\n  report {report_path}")
     return {"before": before, "after": after, "backup": backup,
-            "changed": changed, "known": known, "report": report_path}
+            "changed": changed, "known": known, "skipped": skipped,
+            "report": report_path}
 
 
 def main():

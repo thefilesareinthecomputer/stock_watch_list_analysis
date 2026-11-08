@@ -346,6 +346,38 @@ def test_the_same_revision_is_logged_once_across_days(monkeypatch, capsys):
     assert capsys.readouterr().out.count("SOURCE REVISION") == 1
 
 
+def test_a_gap_inside_the_fetched_window_is_filled_never_rewritten(monkeypatch):
+    import datetime
+
+    import backfill
+
+    con = _traded_warehouse()
+    monkeypatch.setattr(backfill, "_fetch", lambda b, s: _bars(
+        "AAA", {"2026-08-05": 98.0, "2026-08-07": 100.0}))      # 08-06 missing
+    backfill.backfill_prices(con, ["AAA"], "2026-08-01")
+    monkeypatch.setattr(backfill, "_fetch", lambda b, s: _bars(
+        "AAA", {"2026-08-05": 98.0, "2026-08-06": 99.0, "2026-08-07": 55.0}))
+    total, _ = backfill.backfill_prices(con, ["AAA"], "2026-08-01")
+    assert total == 1
+    assert [(r[0], r[1]) for r in _stored(con, "AAA")] == [
+        (datetime.date(2026, 8, 5), 98.0), (datetime.date(2026, 8, 6), 99.0),
+        (datetime.date(2026, 8, 7), 100.0)]                    # 08-07 kept
+
+
+def test_a_fresh_symbol_whose_split_the_source_left_unrestated_is_not_multiplied(
+        monkeypatch, capsys):
+    import backfill
+
+    con = _traded_warehouse()
+    # Served closes halve on the split day: the source did not restate.
+    monkeypatch.setattr(backfill, "_fetch", lambda b, s: _bars(
+        "NEW", {"2026-08-06": 94.0, "2026-08-07": 90.0, "2026-08-11": 45.5},
+        {"2026-08-11": 2.0}))
+    backfill.backfill_prices(con, ["NEW"], "2026-08-01")
+    assert [r[1] for r in _stored(con, "NEW")] == [94.0, 90.0, 45.5]
+    assert "SPLIT NOT RESTATED BY SOURCE NEW 2026-08-11" in capsys.readouterr().out
+
+
 def test_known_symbols_fetch_from_the_overlap_and_new_ones_from_start(monkeypatch):
     import backfill
 

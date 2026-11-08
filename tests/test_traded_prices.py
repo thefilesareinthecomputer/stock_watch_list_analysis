@@ -16,7 +16,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 import pandas as pd
 import pytest
 
-from common.traded_prices import later_split_factor, to_traded
+from common.traded_prices import (
+    later_split_factor, to_traded, unrestated_events, vintage_dates, without,
+)
 
 
 def _frame(dates, close=100.0, volume=1000, dividend=0.0):
@@ -87,6 +89,58 @@ def test_missing_volume_stays_missing():
     df["volume"] = pd.array([None], dtype="Int64")
     out = to_traded(df, [(date(2020, 8, 31), 4.0)])
     assert pd.isna(out.loc[0, "volume"]) and out.loc[0, "close"] == 400.0
+
+
+# --- capture vintage: a row is restated only for splits its run already knew
+
+
+def test_rows_captured_before_a_split_are_not_multiplied_by_it():
+    # Run A banked history through 08-07 before the 08-11 split; run B
+    # appended the post-split sessions. A's closes are already in traded
+    # terms for that split and must stay put; the older split still applies.
+    df = _frame(["2024-01-02", "2026-08-07", "2026-08-11"], close=100.0)
+    df["_run_id"] = ["A", "A", "B"]
+    splits = [(date(2025, 1, 2), 3.0), (date(2026, 8, 11), 2.0)]
+    assert list(vintage_dates(df).dt.date) == [
+        date(2026, 8, 7), date(2026, 8, 7), date(2026, 8, 11)]
+    assert to_traded(df, splits)["close"].tolist() == [300.0, 100.0, 100.0]
+
+
+def test_a_frame_without_runs_is_restated_for_every_split():
+    df = _frame(["2024-01-02", "2026-08-07"], close=100.0)
+    assert vintage_dates(df) is None
+    assert to_traded(df, [(date(2026, 8, 11), 2.0)])["close"].tolist() == [200.0, 200.0]
+
+
+# --- the source's own behavior: a decisive split it did not restate
+
+
+def test_unrestated_split_is_named_when_the_served_close_jumps_by_the_ratio():
+    df = _frame(["2026-08-06", "2026-08-07", "2026-08-11"])
+    df["close"] = [94.0, 90.0, 45.5]                 # halves on the split day
+    (event,) = unrestated_events(df, [(date(2026, 8, 11), 2.0)])
+    assert event[:2] == (date(2026, 8, 11), 2.0)
+    assert abs(event[2] - 0.683) < 0.01              # log jump close to log 2
+    assert without([(date(2026, 8, 11), 2.0)], [event]) == []
+
+
+def test_restated_split_is_not_named():
+    df = _frame(["2026-08-07", "2026-08-11"])
+    df["close"] = [45.2, 45.5]                       # no jump: already restated
+    assert unrestated_events(df, [(date(2026, 8, 11), 2.0)]) == []
+
+
+def test_split_the_before_row_never_knew_is_left_to_the_vintage_rule():
+    df = _frame(["2026-08-07", "2026-08-11"])
+    df["close"] = [90.0, 45.5]
+    df["_run_id"] = ["A", "B"]                       # A captured pre-split
+    assert unrestated_events(df, [(date(2026, 8, 11), 2.0)]) == []
+
+
+def test_small_ratios_are_not_judged_by_the_jump():
+    df = _frame(["2024-09-29", "2024-10-02"])
+    df["close"] = [248.1, 213.7]                     # a spin-off day move
+    assert unrestated_events(df, [(date(2024, 10, 2), 1.128)]) == []
 
 
 def test_timestamp_and_date_inputs_agree():

@@ -104,6 +104,43 @@ def test_migration_backs_up_then_converts_only_pre_split_rows(warehouse, tmp_pat
     assert "SPLT" in text and str(before_fp[0]) in text and backup in text
 
 
+def _add(path, symbol, rows, run_id, splits):
+    con = duckdb.connect(path)
+    con.executemany(
+        "INSERT INTO bronze_prices (symbol, date, close, adj_close, dividend, "
+        "volume, _run_id) VALUES (?, ?, ?, ?, 0.0, 100, ?)",
+        [[symbol, d, c, a, run_id] for d, c, a in rows])
+    record_actions(con, [{"symbol": symbol, "date": d, "ratio": r} for d, r in splits],
+                   source="test")
+    con.close()
+
+
+def test_rows_captured_before_a_split_stay_in_their_own_terms(warehouse, tmp_path):
+    # Banked once before the 08-11 split (run OLD): closes 90 are traded
+    # already. The post-split rows came in a later run. Nothing may move.
+    _add(warehouse, "BANK", [("2026-08-06", 94.0, 94.0), ("2026-08-07", 90.0, 90.0)],
+         "OLD", [("2026-08-11", 2.0)])
+    _add(warehouse, "BANK", [("2026-08-11", 45.5, 45.5)], "NEW", [])
+    before = _closes(warehouse, "BANK")
+    report = mig.migrate(warehouse, str(tmp_path / "bk"), str(tmp_path / "r"))
+    assert _closes(warehouse, "BANK") == before
+    assert "BANK" not in report["changed"] and report["skipped"] == []
+
+
+def test_a_split_the_source_served_unrestated_is_skipped_and_reported(
+        warehouse, tmp_path, capsys):
+    # One run, but the served close halves on the split day: the source
+    # never restated this split, so the pre-split rows are traded already.
+    _add(warehouse, "RAWS", [("2026-08-06", 94.0, 94.0), ("2026-08-07", 90.0, 90.0),
+                             ("2026-08-11", 45.5, 45.5)], "run0", [("2026-08-11", 2.0)])
+    before = _closes(warehouse, "RAWS")
+    report = mig.migrate(warehouse, str(tmp_path / "bk"), str(tmp_path / "r"))
+    assert _closes(warehouse, "RAWS") == before
+    assert [s[:3] for s in report["skipped"]] == [("RAWS", "2026-08-11", 2.0)]
+    assert "SPLIT NOT RESTATED BY SOURCE RAWS 2026-08-11" in capsys.readouterr().out
+    assert "| RAWS | 2026-08-11 | 2 |" in open(report["report"]).read()
+
+
 def test_a_migrated_warehouse_refuses_a_second_run(warehouse, tmp_path):
     mig.migrate(warehouse, str(tmp_path / "bk"), str(tmp_path / "r"))
     rows = _closes(warehouse, "SPLT")

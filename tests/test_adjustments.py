@@ -85,6 +85,16 @@ def test_actions_compound_across_time():
         pytest.approx(0.99 / 2)
 
 
+def test_dividend_paid_on_a_split_day_is_measured_in_that_days_terms():
+    # A 1-for-2 reverse split and a 15.125 distribution on the same day,
+    # prior close 28.55 in pre-split terms (57.10 in the new terms). The
+    # dividend ratio is 1 - 15.125 / 57.10, not 1 - 15.125 / 28.55.
+    df = _frame([("2011-12-20", 28.55, 0.0),
+                 ("2011-12-21", 27.89, 15.125)])
+    factor = adjustment_factor(df, [(date(2011, 12, 21), 0.5)])
+    assert factor.iloc[0] == pytest.approx((1 - 15.125 / 57.10) / 0.5)
+
+
 def test_dividend_on_first_row_cannot_be_applied():
     """No prior close to measure against - must not produce NaN."""
     df = _frame([("2026-01-01", 100.0, 2.0),
