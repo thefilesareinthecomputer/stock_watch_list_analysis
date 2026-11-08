@@ -31,7 +31,7 @@ secrets and the `WATCHLIST` repo secret: README "Quick Start" step 3.
 Databricks is the production target; iteration happens locally (~2 min against
 ~18 min plus quota per run there).
 ```bash
-uv run python scripts/backfill.py               # yfinance -> warehouse/market.duckdb
+uv run python scripts/backfill.py               # yfinance -> bronze_prices: appends new sessions in traded terms, never rewrites
 uv run python scripts/backfill_fundamentals.py  # SEC EDGAR -> bronze_fundamentals
 uv run python scripts/build_local.py            # silver + gold + forward returns
 uv run python scripts/evaluate.py --candidates  # walk-forward verdict on candidates

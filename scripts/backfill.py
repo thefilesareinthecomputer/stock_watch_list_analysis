@@ -1,22 +1,27 @@
-"""Backfill raw prices and corporate actions into the local DuckDB warehouse.
+"""Append traded prices and corporate actions to the local DuckDB warehouse.
 
-    uv run python scripts/backfill.py              # full history (config.HISTORY_START_DATE)
-    uv run python scripts/backfill.py --years 3    # shorter window
+    uv run python scripts/backfill.py              # new sessions; full history for new symbols
+    uv run python scripts/backfill.py --years 3    # shorter history for NEW symbols only
     uv run python scripts/backfill.py --limit 20   # smoke test
 
-Stores RAW OHLCV plus dividends and splits - deliberately not adjusted close.
-`auto_adjust=True` rescales the entire close history every time a dividend is
-paid, so an adjusted series is not stable over time and cannot serve as the
-evidence layer: a score computed last month silently changes this month. Owning
-raw prices plus the actions that adjust them makes history immutable and lets
-the adjustment be recomputed deterministically whenever it is needed.
+bronze_prices holds the OHLCV each symbol actually traded at, plus dividends
+and splits in the same terms - never an adjusted series. Yahoo serves history
+restated into today's share terms and `auto_adjust=True` rescales it on every
+dividend, so nothing served can be the evidence layer: a score computed last
+month would silently change this month. Each fetched row is converted back to
+traded terms through the corporate_actions split log (common.traded_prices)
+before it is stored, and the adjustment is derived on demand.
 
-Idempotent per (symbol, window): re-running deletes and re-inserts the rows it
-fetched rather than duplicating them.
+Append-only. A symbol with history is fetched from a short overlap before its
+newest stored session and only newer sessions are inserted; a symbol without
+history is fetched from `start`. Stored rows are never rewritten. The run
+refuses a warehouse whose bronze is still in served terms
+(warehouse_meta.bronze_terms): run scripts/migrate_traded_prices.py first.
 """
 import argparse
 import os
 import sys
+from datetime import date, timedelta
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "src"))
@@ -30,17 +35,24 @@ import pandas as pd  # noqa: E402
 import yfinance as yf  # noqa: E402
 
 from common.config import TICKERS, BENCHMARK_TICKERS, HISTORY_START_DATE  # noqa: E402
-from common.corporate_actions import record_actions  # noqa: E402
+from common.corporate_actions import record_actions, splits_for  # noqa: E402
 from common.positions import daily_symbols, load_positions  # noqa: E402
 from common.quality import (  # noqa: E402
     completed_session_cutoff, last_trading_session,
 )
 from common.run_context import new_run_id, now_ts  # noqa: E402
 from common.security import ensure_quote_types  # noqa: E402
+from common.traded_prices import to_traded  # noqa: E402
+from common.warehouse_meta import (  # noqa: E402
+    BRONZE_TERMS, TRADED, bronze_is_traded, set_meta,
+)
 
 WAREHOUSE = os.path.join(ROOT, "warehouse", "market.duckdb")
 TABLE = "bronze_prices"
 CHUNK = 25
+# Sessions re-fetched before a symbol's newest stored row. They are never
+# re-inserted; they are the window in which a source revision can be seen.
+OVERLAP_DAYS = 7
 
 SCHEMA = """
     CREATE TABLE IF NOT EXISTS bronze_prices (
@@ -137,10 +149,64 @@ def record_splits(con, frame, source="yfinance"):
     return inserted
 
 
+def _require_traded_terms(con):
+    """Appending onto Yahoo's restated history would mix two share terms in
+    one table, so refuse. An empty table is trivially in traded terms."""
+    if bronze_is_traded(con):
+        return
+    if con.execute(f"SELECT COUNT(*) FROM {TABLE}").fetchone()[0] == 0:
+        set_meta(con, BRONZE_TERMS, TRADED)
+        return
+    sys.exit(f"{TABLE} is still in served (restated) terms; run "
+             "scripts/migrate_traded_prices.py --backup-dir DIR first")
+
+
+def _last_stored(con, symbols):
+    """{symbol: newest stored session} for the symbols that have rows."""
+    marks = ", ".join("?" for _ in symbols)
+    return dict(con.execute(
+        f"SELECT symbol, MAX(date) FROM {TABLE} WHERE symbol IN ({marks}) "
+        "GROUP BY symbol", list(symbols)).fetchall())
+
+
+def _traded_rows(con, df):
+    """Fetched rows converted to traded terms, symbol by symbol, using the
+    split log (which record_splits has just brought up to date)."""
+    return pd.concat(
+        [to_traded(sub, splits_for(con, symbol))
+         for symbol, sub in df.groupby("symbol", sort=False)],
+        ignore_index=True)
+
+
+def _store_new_sessions(con, df, last, run_id, ingest_ts):
+    """Insert the rows newer than each symbol's stored history; return the
+    count. Overlap rows (already stored) are never written."""
+    newest = df["symbol"].map(last)
+    new = df[newest.isna() | (df["date"] > newest)].copy()
+    if new.empty:
+        return 0
+    new["_run_id"] = run_id
+    new["_ingest_ts"] = ingest_ts
+    new["_source_system"] = "yfinance"
+    new["_source_event_ts"] = new["date"].astype(str) + "T00:00:00Z"
+    new["_load_type"] = new["symbol"].map(
+        lambda s: "incremental" if s in last else "full")
+    for col in ("dividend", "split_ratio", "adj_close"):
+        if col not in new:
+            new[col] = None
+    cols = [c for c in con.execute(f"DESCRIBE {TABLE}").df()["column_name"]]
+    con.register("incoming", new[cols])
+    con.execute(f"INSERT INTO {TABLE} SELECT * FROM incoming")
+    con.unregister("incoming")
+    return len(new)
+
+
 def backfill_prices(con, symbols, start):
-    """Fetch and store raw history for symbols; idempotent per (symbol,
-    window). Returns (rows_inserted, missing_symbols)."""
+    """Append each symbol's sessions newer than what is stored, in traded
+    terms; a symbol with no history is loaded from `start`. Returns
+    (rows_inserted, missing_symbols)."""
     con.execute(SCHEMA)
+    _require_traded_terms(con)
     # Splits stored before the event log existed are recorded from bronze;
     # idempotent, so an already-seeded log costs one query.
     record_splits(con, con.execute(
@@ -149,9 +215,20 @@ def backfill_prices(con, symbols, start):
     run_id, ingest_ts = new_run_id(), now_ts()
     total, missing = 0, []
 
-    for i in range(0, len(symbols), CHUNK):
-        batch = symbols[i:i + CHUNK]
-        df = _fetch(batch, start)
+    last = _last_stored(con, symbols)
+    known = [s for s in symbols if s in last]
+    fresh = [s for s in symbols if s not in last]
+    groups = []
+    for i in range(0, len(known), CHUNK):
+        batch = known[i:i + CHUNK]
+        overlap = min(last[s] for s in batch) - timedelta(days=OVERLAP_DAYS)
+        groups.append((batch, str(overlap)))
+    for i in range(0, len(fresh), CHUNK):
+        groups.append((fresh[i:i + CHUNK], start))
+
+    done = 0
+    for batch, batch_start in groups:
+        df = _fetch(batch, batch_start)
         got = set(df["symbol"]) if not df.empty else set()
         missing += [s for s in batch if s not in got]
 
@@ -160,37 +237,20 @@ def backfill_prices(con, symbols, start):
             # A run during or before the session drags in a partial bar
             # for today; incomplete sessions never reach bronze.
             df = df[df["date"] <= completed_session_cutoff()]
-            record_splits(con, df)
-
         if not df.empty:
-            df["_run_id"] = run_id
-            df["_ingest_ts"] = ingest_ts
-            df["_source_system"] = "yfinance"
-            df["_source_event_ts"] = df["date"].astype(str) + "T00:00:00Z"
-            df["_load_type"] = "full"
-            for col in ("dividend", "split_ratio", "adj_close"):
-                if col not in df:
-                    df[col] = None
-            cols = [c for c in con.execute(f"DESCRIBE {TABLE}").df()["column_name"]]
-            df = df[cols]
+            record_splits(con, df)
+            df = _traded_rows(con, df)
+            total += _store_new_sessions(con, df, last, run_id, ingest_ts)
 
-            con.register("incoming", df)
-            con.execute(
-                f"DELETE FROM {TABLE} WHERE symbol IN "
-                f"(SELECT DISTINCT symbol FROM incoming) AND date >= '{start}'"
-            )
-            con.execute(f"INSERT INTO {TABLE} SELECT * FROM incoming")
-            con.unregister("incoming")
-            total += len(df)
-
-        print(f"  {min(i + CHUNK, len(symbols))}/{len(symbols)} symbols, "
-              f"{total} rows", flush=True)
+        done += len(batch)
+        print(f"  {done}/{len(symbols)} symbols, {total} rows", flush=True)
     return total, missing
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--years", type=int, help="window instead of full history")
+    parser.add_argument("--years", type=int,
+                        help="history window for symbols with no stored rows")
     parser.add_argument("--limit", type=int, help="only the first N symbols")
     args = parser.parse_args()
 

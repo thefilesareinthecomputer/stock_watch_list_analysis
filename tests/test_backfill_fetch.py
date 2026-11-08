@@ -142,11 +142,169 @@ def test_splits_already_in_bronze_are_seeded_into_the_log(monkeypatch):
 
     import backfill
 
-    con = duckdb.connect(":memory:")
-    con.execute(backfill.SCHEMA)
+    con = _traded_warehouse()
     con.execute("INSERT INTO bronze_prices (symbol, date, close, split_ratio) "
                 "VALUES ('OLD', '2021-07-20', 1.0, 10.0), "
                 "('OLD', '2021-07-21', 1.0, 0.0)")
     monkeypatch.setattr(backfill, "_fetch", lambda b, s: pd.DataFrame())
     backfill.backfill_prices(con, ["AAA"], "2026-08-01")
     assert _events(con) == [("OLD", datetime.date(2021, 7, 20), 10.0)]
+
+
+# --- append-only: past sessions are never rewritten (STORY-000006)
+
+
+def _traded_warehouse():
+    import duckdb
+
+    from common.warehouse_meta import BRONZE_TERMS, TRADED, set_meta
+
+    import backfill
+
+    con = duckdb.connect(":memory:")
+    con.execute(backfill.SCHEMA)
+    set_meta(con, BRONZE_TERMS, TRADED)
+    return con
+
+
+def _bars(symbol, closes, splits=None):
+    """Fetched frame: one row per (date, close); splits = {date: ratio}."""
+    dates = sorted(closes)
+    return pd.DataFrame({
+        "Date": [pd.Timestamp(d) for d in dates], "symbol": symbol,
+        "open": [closes[d] for d in dates], "high": [closes[d] for d in dates],
+        "low": [closes[d] for d in dates], "close": [closes[d] for d in dates],
+        "adj_close": [closes[d] for d in dates], "volume": 1000,
+        "dividend": 0.0,
+        "split_ratio": [(splits or {}).get(d, 0.0) for d in dates]})
+
+
+def _stored(con, symbol):
+    return con.execute(
+        "SELECT date, close, volume, _load_type FROM bronze_prices "
+        "WHERE symbol = ? ORDER BY date", [symbol]).fetchall()
+
+
+def _fingerprint(con):
+    return con.execute("SELECT COUNT(*), SUM(HASH(symbol, date, close)) "
+                       "FROM bronze_prices").fetchone()
+
+
+def test_backfill_source_has_no_delete_against_bronze():
+    import inspect
+
+    import backfill
+
+    assert "DELETE" not in inspect.getsource(backfill)
+
+
+def test_backfill_refuses_a_warehouse_still_in_restated_terms(monkeypatch):
+    import duckdb
+
+    import backfill
+
+    con = duckdb.connect(":memory:")
+    con.execute(backfill.SCHEMA)
+    con.execute("INSERT INTO bronze_prices (symbol, date, close) "
+                "VALUES ('AAA', '2026-08-07', 100.0)")
+    monkeypatch.setattr(backfill, "_fetch", lambda b, s: pd.DataFrame())
+    with pytest.raises(SystemExit, match="migrate_traded_prices"):
+        backfill.backfill_prices(con, ["AAA"], "2026-08-01")
+
+
+def test_an_empty_warehouse_is_marked_traded_and_loads(monkeypatch):
+    import duckdb
+
+    from common.warehouse_meta import bronze_is_traded
+
+    import backfill
+
+    con = duckdb.connect(":memory:")
+    monkeypatch.setattr(backfill, "_fetch",
+                        lambda b, s: _bars("AAA", {"2026-08-07": 100.0}))
+    total, _ = backfill.backfill_prices(con, ["AAA"], "2026-08-01")
+    assert total == 1 and bronze_is_traded(con)
+
+
+def test_second_run_rewrites_nothing_and_appends_the_new_session(monkeypatch):
+    import datetime
+
+    import backfill
+
+    con = _traded_warehouse()
+    monkeypatch.setattr(backfill, "_fetch", lambda b, s: _bars(
+        "AAA", {"2026-08-06": 99.0, "2026-08-07": 100.0}))
+    backfill.backfill_prices(con, ["AAA"], "2026-08-01")
+    before = _fingerprint(con)
+
+    # The source now restates 08-07 and adds 08-10. Stored rows stay put;
+    # the new session lands once.
+    monkeypatch.setattr(backfill, "_fetch", lambda b, s: _bars(
+        "AAA", {"2026-08-06": 99.0, "2026-08-07": 50.0, "2026-08-10": 101.0}))
+    total, _ = backfill.backfill_prices(con, ["AAA"], "2026-08-01")
+    assert total == 1
+    rows = _stored(con, "AAA")
+    assert [(r[0], r[1]) for r in rows] == [
+        (datetime.date(2026, 8, 6), 99.0), (datetime.date(2026, 8, 7), 100.0),
+        (datetime.date(2026, 8, 10), 101.0)]
+    assert [r[3] for r in rows] == ["full", "full", "incremental"]
+    assert _fingerprint(con)[0] == before[0] + 1
+    assert _fingerprint(_subset(con, "date <= '2026-08-07'")) == before
+
+
+def _subset(con, where):
+    sub = con.cursor()
+    sub.execute("CREATE OR REPLACE TEMP TABLE _sub AS "
+                f"SELECT * FROM bronze_prices WHERE {where}")
+
+    class _View:
+        def execute(self, sql):
+            return sub.execute(sql.replace("bronze_prices", "_sub"))
+    return _View()
+
+
+def test_new_rows_are_stored_in_traded_terms(monkeypatch):
+    # A 2-for-1 on 08-10. Yahoo serves 08-07 halved; the split-date row is
+    # already post-split. For a known symbol only 08-10 is new and lands
+    # as served; the stored 08-07 keeps its traded close. For a symbol
+    # with no history, 08-07 is converted back to traded terms on the way in.
+    import datetime
+
+    import backfill
+
+    con = _traded_warehouse()
+    monkeypatch.setattr(backfill, "_fetch",
+                        lambda b, s: _bars("OLD", {"2026-08-07": 100.0}))
+    backfill.backfill_prices(con, ["OLD"], "2026-08-01")
+
+    served = {"2026-08-07": 50.0, "2026-08-10": 52.0}
+    # Like the source, a fetch returns only the batch it was asked for.
+    monkeypatch.setattr(backfill, "_fetch", lambda batch, s: pd.concat(
+        [_bars(sym, served, {"2026-08-10": 2.0}) for sym in batch],
+        ignore_index=True))
+    backfill.backfill_prices(con, ["OLD", "NEW"], "2026-08-01")
+
+    assert [(r[0], r[1], r[2]) for r in _stored(con, "OLD")] == [
+        (datetime.date(2026, 8, 7), 100.0, 1000),
+        (datetime.date(2026, 8, 10), 52.0, 1000)]
+    assert [(r[0], r[1], r[2]) for r in _stored(con, "NEW")] == [
+        (datetime.date(2026, 8, 7), 100.0, 500),
+        (datetime.date(2026, 8, 10), 52.0, 1000)]
+
+
+def test_known_symbols_fetch_from_the_overlap_and_new_ones_from_start(monkeypatch):
+    import backfill
+
+    con = _traded_warehouse()
+    con.execute("INSERT INTO bronze_prices (symbol, date, close) "
+                "VALUES ('OLD', '2026-08-07', 100.0)")
+    calls = []
+
+    def fake_fetch(batch, start):
+        calls.append((tuple(batch), str(start)))
+        return pd.DataFrame()
+
+    monkeypatch.setattr(backfill, "_fetch", fake_fetch)
+    backfill.backfill_prices(con, ["OLD", "NEW"], "2010-01-01")
+    assert sorted(calls) == [(("NEW",), "2010-01-01"),
+                             (("OLD",), "2026-07-31")]

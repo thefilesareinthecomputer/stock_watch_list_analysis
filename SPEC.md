@@ -42,8 +42,11 @@ As of 2026-08-10 this holds partially. `gold.recommendations` is append-only and
 first-write-wins, so recommendations are now evidence. Every *other* gold table
 is still rebuilt with `CREATE OR REPLACE` on each run, and on Databricks
 `auto_adjust=True` still rescales the close history on every dividend. Locally
-that second problem is solved: bronze stores raw prices and the adjustment is
-derived on demand.
+that second problem is solved: `bronze_prices` stores the closes that actually
+traded, appended once per session and never rewritten (`scripts/backfill.py`
+has no delete path and refuses a warehouse still in Yahoo's restated terms
+until `scripts/migrate_traded_prices.py` has run); splits live in
+`corporate_actions` and the adjustment is derived on demand.
 
 ### P2. Point-in-time or not at all
 
