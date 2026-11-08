@@ -47,6 +47,8 @@ DAILY_STEPS = [
     {"name": "backfill", "script": "scripts/backfill.py",
      "retries": [300, 900, 2700]},
     {"name": "build", "script": "scripts/build_local.py"},
+    # The one page that says whether today's data can be trusted.
+    {"name": "proof", "script": "scripts/data_proof.py"},
     {"name": "fresh", "script": "scripts/fresh.py"},
     # --dry-run until delivery ships: recording an episode nobody is told
     # about would mark it fired and the user would never hear of it.

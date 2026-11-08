@@ -54,32 +54,41 @@ def test_fixture_names_no_held_symbol():
     assert not {r["symbol"] for r in ROWS} & held
 
 
+def test_checker_reports_ok_fail_and_absent():
+    import duckdb
+
+    from common.known_closes import check_known_closes
+    from common.warehouse_meta import BRONZE_TERMS, TRADED, set_meta
+
+    con = duckdb.connect(":memory:")
+    con.execute("CREATE TABLE bronze_prices (symbol VARCHAR, date DATE, close DOUBLE)")
+    con.execute("INSERT INTO bronze_prices VALUES ('GOOD', '2020-01-02', 10.0), "
+                "('BAD', '2020-01-02', 10.5)")
+    set_meta(con, BRONZE_TERMS, TRADED)
+    rows = [{"symbol": "GOOD", "date": "2020-01-02", "close": 10.0},
+            {"symbol": "BAD", "date": "2020-01-02", "close": 10.0},
+            {"symbol": "NONE", "date": "2020-01-02", "close": 10.0}]
+    assert [r[4] for r in check_known_closes(con, rows)] == ["ok", "FAIL", "absent"]
+
+
 @pytest.mark.skipif(not os.path.exists(WAREHOUSE),
                     reason="local warehouse not built; run scripts/backfill.py")
 @pytest.mark.parametrize("row", ROWS, ids=[f"{r['symbol']}-{r['date']}" for r in ROWS])
 def test_bronze_reproduces_the_published_close(row):
+    """Before the migration the checker converts the served close through
+    the split log (what the migration will store); after it, the stored
+    close itself."""
     import duckdb
 
-    from common.corporate_actions import splits_for
-    from common.traded_prices import to_traded
-    from common.warehouse_meta import bronze_is_traded
+    from common.known_closes import check_known_closes
 
     con = duckdb.connect(WAREHOUSE, read_only=True)
     try:
-        frame = con.execute(
-            "SELECT date, close FROM bronze_prices WHERE symbol = ? AND date = ?",
-            [row["symbol"], row["date"]]).df()
-        if frame.empty:
-            pytest.skip(f"{row['symbol']} {row['date']} not in the warehouse")
-        if bronze_is_traded(con):
-            stored = float(frame["close"].iloc[0])
-        else:
-            # Not yet migrated: the stored close is Yahoo's restated value;
-            # check what the migration will store.
-            stored = float(to_traded(frame, splits_for(con, row["symbol"]))
-                           ["close"].iloc[0])
+        (result,) = check_known_closes(con, [row])
     finally:
         con.close()
-    assert abs(stored - row["close"]) < 0.01, (
-        f"{row['symbol']} {row['date']}: bronze {stored:.4f}, "
-        f"published {row['close']} ({row['source_title']})")
+    symbol, day, published, stored, status = result
+    if status == "absent":
+        pytest.skip(f"{symbol} {day} not in the warehouse")
+    assert status == "ok", (f"{symbol} {day}: bronze {stored:.4f}, published "
+                            f"{published} ({row['source_title']})")

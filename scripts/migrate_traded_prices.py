@@ -30,6 +30,7 @@ sys.path.insert(0, os.path.join(ROOT, "src"))
 import duckdb  # noqa: E402
 
 from common.corporate_actions import splits_for  # noqa: E402
+from common.known_closes import load_known_closes  # noqa: E402
 from common.traded_prices import to_traded  # noqa: E402
 from common.warehouse_meta import (  # noqa: E402
     BRONZE_TERMS, TRADED, bronze_is_traded, set_meta,
@@ -38,8 +39,8 @@ from common.warehouse_meta import (  # noqa: E402
 WAREHOUSE = os.path.join(ROOT, "warehouse", "market.duckdb")
 REPORTS = os.path.join(ROOT, "reports")
 TABLE = "bronze_prices"
-# Closes published outside Yahoo; the migration must reproduce them.
-KNOWN_CLOSES = [("AAPL", "2020-08-28", 499.23)]
+# Closes published outside Yahoo; the migration must reproduce every one.
+KNOWN_CLOSES = [(r["symbol"], r["date"], r["close"]) for r in load_known_closes()]
 TOLERANCE = 0.01
 
 
