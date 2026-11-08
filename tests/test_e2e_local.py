@@ -16,6 +16,7 @@ import numpy as np
 import pandas as pd
 
 from build_local import build_gold, build_signals
+from common.corporate_actions import record_actions
 from backtest.harness import evaluation_frame
 from backtest.metrics import evaluate
 from backtest.returns import build_forward_returns
@@ -31,7 +32,7 @@ def _seed_warehouse(con):
         CREATE TABLE bronze_prices (
             symbol VARCHAR, date DATE, open DOUBLE, high DOUBLE, low DOUBLE,
             close DOUBLE, adj_close DOUBLE, volume BIGINT, dividend DOUBLE,
-            split_ratio DOUBLE)
+            split_ratio DOUBLE, _run_id VARCHAR)
     """)
     dates = pd.bdate_range("2023-01-02", periods=320)
     rng = np.random.default_rng(42)
@@ -45,9 +46,13 @@ def _seed_warehouse(con):
             if split:
                 price /= split
             con.execute(
-                "INSERT INTO bronze_prices VALUES (?,?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO bronze_prices VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                 [symbol, str(date.date()), price, price * 1.01, price * 0.99,
-                 price, None, 1_000_000, dividend, split])
+                 price, None, 1_000_000, dividend, split, "r"])
+    # Prices are in traded terms (the close halves on the split date), and
+    # the split is an event in the log, as in the real warehouse.
+    record_actions(con, [{"symbol": "GROW", "date": dates[200].date(),
+                          "ratio": 2.0}], source="test")
 
     con.execute("""
         CREATE TABLE bronze_fundamentals (

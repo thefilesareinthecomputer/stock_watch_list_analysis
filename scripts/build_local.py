@@ -35,6 +35,7 @@ import pandas as pd  # noqa: E402
 
 from backtest.returns import DECAY_HORIZONS, build_forward_returns  # noqa: E402
 from common.adjustments import adjusted_prices, max_divergence  # noqa: E402
+from common.corporate_actions import splits_for  # noqa: E402
 
 # Our adjusted closes must match the source's own within this; anything
 # wider is printed by name every build (2026-11-07: a double-applied split
@@ -59,21 +60,22 @@ WAREHOUSE = os.path.join(ROOT, "warehouse", "market.duckdb")
 def build_signals(con, symbols, as_of=None):
     frames, adj_frames, mismatches = [], [], []
     for i, symbol in enumerate(symbols, 1):
-        # adj_close (Yahoo's) is selected as evidence: it decides whether a
-        # split is already in the close, and it is the reconciliation yardstick.
+        # adj_close (Yahoo's) and _run_id are selected for the reconciliation
+        # yardstick: each row is judged against what Yahoo said at its capture.
         raw = con.execute(
             "SELECT date, open, high, low, close, adj_close, volume, dividend, "
-            "split_ratio FROM bronze_prices WHERE symbol = ? AND date <= ? "
+            "_run_id FROM bronze_prices WHERE symbol = ? AND date <= ? "
             "ORDER BY date",
             [symbol, as_of or "9999-12-31"]
         ).df()
         if len(raw) < 200:  # indicators need ~200 sessions of warmup
             continue
 
-        divergence = max_divergence(raw)
+        splits = splits_for(con, symbol)
+        divergence = max_divergence(raw, splits)
         if divergence > ADJ_TOLERANCE:
             mismatches.append(f"{symbol} {divergence:.1%}")
-        adj = adjusted_prices(raw)
+        adj = adjusted_prices(raw, splits)
         # The backtest fills at next open, so adjusted opens must be stored,
         # not recomputed per query.
         keep = adj[["date", "adj_open", "adj_close"]].copy()
