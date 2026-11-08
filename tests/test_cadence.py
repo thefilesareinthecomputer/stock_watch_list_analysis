@@ -83,6 +83,8 @@ def test_plist_renders_paths_at_install_time_never_from_a_tracked_file():
     assert "<string>/tmp/repo</string>" in plist
     assert "/opt/bin/uv" in plist and "/usr/bin/caffeinate" in plist
     assert "<key>RunAtLoad</key>" in plist
+    odd = render_plist(template, "/tmp/a&b", "/opt/bin/uv")
+    assert "/tmp/a&amp;b" in odd and "/tmp/a&b<" not in odd
 
 
 def test_run_lock_refuses_a_second_concurrent_run(tmp_path):

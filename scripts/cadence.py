@@ -23,6 +23,7 @@ import subprocess
 import sys
 import time
 from datetime import datetime
+from xml.sax.saxutils import escape
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "src"))
@@ -88,8 +89,10 @@ def cmd_run():
 
 
 def render_plist(template, root, uv):
-    return (template.replace("{{ROOT}}", root).replace("{{UV}}", uv)
-            .replace("{{LABEL}}", LABEL))
+    # XML-escape the paths: a repo path containing & or < would otherwise
+    # yield a plist launchctl rejects.
+    return (template.replace("{{ROOT}}", escape(root))
+            .replace("{{UV}}", escape(uv)).replace("{{LABEL}}", LABEL))
 
 
 def _agent_path():

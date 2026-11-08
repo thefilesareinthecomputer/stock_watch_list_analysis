@@ -21,6 +21,26 @@ def test_append_never_rewrites_and_blank_lines_are_skipped(tmp_path):
     assert read_jsonl(path) == [{"a": 2, "b": 1}, {"c": 3}, {"d": 4}]
 
 
+def test_a_torn_final_line_from_a_killed_run_is_skipped_not_fatal(tmp_path):
+    # A run killed mid-append leaves half a line; every later run must not
+    # fail on it. Only the FINAL line may be torn - corruption earlier in
+    # the file still raises.
+    path = tmp_path / "ledger.jsonl"
+    append_jsonl(path, [{"a": 1}])
+    with open(path, "a") as f:
+        f.write('{"b": ')
+    assert read_jsonl(path) == [{"a": 1}]
+
+
+def test_corruption_before_the_last_line_still_raises(tmp_path):
+    import pytest
+    path = tmp_path / "ledger.jsonl"
+    with open(path, "w") as f:
+        f.write('{"b": \n{"a": 1}\n')
+    with pytest.raises(ValueError):
+        read_jsonl(path)
+
+
 def test_key_order_is_preserved_unless_sorting_is_asked_for(tmp_path):
     # Existing logs differ: some were written sorted, some not. A shared
     # helper must not silently change a log's line format.
