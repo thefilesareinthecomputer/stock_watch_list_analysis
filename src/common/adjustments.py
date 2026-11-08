@@ -21,6 +21,11 @@ the price at t - which is also why the series changes whenever a new dividend
 lands, and why it cannot be the stored record.
 
 Reconciled against yfinance's own adj_close by tests/test_adjustments.py.
+
+TRANSITION (EPIC-000000). `common.traded_prices.to_traded` converts served
+rows to traded terms using the corporate_actions log. Once bronze_prices is
+migrated to traded closes, the split column is raw by construction and the
+`_split_is_raw` heuristic retires in favor of the log (STORY-000012).
 """
 import numpy as np
 import pandas as pd
