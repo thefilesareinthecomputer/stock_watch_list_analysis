@@ -132,6 +132,15 @@ raw across them, and every build reconciles against Yahoo's own adj_close.
 `_source_system`, `_source_event_ts`, `_load_type`. Never corrected in place; a
 correction is a new row with a later `_ingest_ts`.
 
+Corporate actions are events in their own log, `corporate_actions`
+(`src/common/corporate_actions.py`), with the grain one row per
+`(symbol, date, type)` and the columns `symbol, date, ratio, type, source,
+first_seen`. A split is recorded once, on first sight, and the writer has no
+path that alters or removes a row: a source that later reports a different
+ratio for a logged event is returned to the caller as a conflict and the log
+keeps what it first saw. Adjusted series are derived from `bronze_prices`
+plus this log, never stored as evidence.
+
 **Silver - validated.** Deduped, typed, conformed. SCD2 where attributes change
 over time (fundamentals, keyed by `attr_hash` so unchanged replays do not create
 phantom versions). Silver is where point-in-time resolution happens.
