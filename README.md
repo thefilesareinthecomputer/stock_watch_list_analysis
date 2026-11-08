@@ -34,7 +34,8 @@ successor lives in the local-first engine (methodology v2: walk-forward
 validated with stated caveats, emitting recorded monthly call rounds since
 2026-08). The Databricks surface remains a research view, not advice - see
 [`SPEC.md`](SPEC.md) for the architecture; the program's phase specs live
-in the private `tasks/` folder (gitignored, local-only).
+in the private `tasks/` folder and its knowledge vault in the private
+`PROJECTS/` folder (both gitignored, local-only).
 
 <p align="center">
   <img src="static-assets/pipeline-runs.png" alt="Daily job run history in Databricks" width="700"><br>

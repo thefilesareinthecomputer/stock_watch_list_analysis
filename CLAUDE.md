@@ -5,6 +5,11 @@ patterns, deploy steps, and design decisions live in [`README.md`](README.md)**;
 first principles and operational constraints (incl. the Free Edition build
 breakers) in [`SPEC.md`](SPEC.md). This file is agent guidance only.
 
+Project knowledge vault: `PROJECTS/stocks/` - its `AGENTS.md` is the contract, its
+graph is `PROJECTS/stocks/markdown-kg/`, and its deliverables are in
+`PROJECTS/stocks-DELIVERABLES/`. Private and gitignored; query it through the
+graph rather than reading the notes whole.
+
 ## Working agreement
 - User runs all installs and git commands. Assistant writes to requirements files
   and **stages** git commands for approval - never commits or pushes directly.
@@ -68,6 +73,7 @@ so parity there is by construction. SQL that must run on both engines goes throu
 | `reports/` | Decision/weekly reports (name positions) | Yes - `decide.py` |
 | `knowledge/` | Research and KB, incl. `POSITIONS.md` (held positions) | **No** |
 | `tasks/` | Plans and specs (reference held names) | **No** |
+| `PROJECTS/` | Knowledge vault `stocks/` and its deliverables (engine notes will name positions) | **No** |
 | `_relay.md` | Handoff scratch file, bidirectional | No |
 
 Never echo the contents of these into commit messages, tracked files, or anything

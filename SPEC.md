@@ -91,6 +91,22 @@ Any output must be regenerable from bronze plus a versioned methodology
 identifier. Where an artifact is disposable, its generator is the durable thing
 and lives in the repo.
 
+### P7. Proven from more than one source; conflicts end in a ruling
+
+Every figure a decision rests on is checked against at least one source or
+method independent of the one that produced it, and a disagreement ends in a
+recorded ruling, never in a silent choice by code. Stored closes are checked
+against the source's own adjusted column at each row's capture vintage
+(`common.adjustments.max_divergence`) and against closes published outside the
+source (`tests/fixtures/known_closes.json`, a citation per row). A detector
+that judges the source's behavior rather than its data is the weaker method:
+what it finds is investigated and ruled into `src/common/source_defects.json`,
+and the daily proof report lists ruled items as known and anything new as
+attention. A heuristic may flag; only a ruling may decide. As of 2026-11-08 the
+one place a detector still decides is `common.traded_prices.unrestated_events`
+in the traded-price conversion; closing that gap is queued in the backlog.
+Added at the Portfolio Owner's E1 review, 2026-11-08.
+
 ---
 
 ## 4. Data sources

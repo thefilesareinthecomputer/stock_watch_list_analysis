@@ -48,6 +48,8 @@ reports/
 guard_events.jsonl
 # Cadence run ledger and step logs - per machine
 logs/
+# Project knowledge vault and its deliverables - private, names positions and calls
+PROJECTS/
 
 # Claude Code — per-device, not shared
 .claude/inbox/
