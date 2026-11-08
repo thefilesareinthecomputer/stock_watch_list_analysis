@@ -13,7 +13,7 @@ source that later disagrees with the log is reported back to the caller
 as a conflict and the log keeps what it first saw.
 """
 import math
-from datetime import date
+from datetime import date, datetime
 
 from common.run_context import now_ts
 from common.tables import has_table
@@ -44,6 +44,8 @@ def _validate(event):
     if not symbol:
         raise ValueError("symbol is required")
     day = event.get("date")
+    if isinstance(day, datetime):          # pandas Timestamp included
+        day = day.date()
     if not isinstance(day, date):
         try:
             day = date.fromisoformat(str(day))

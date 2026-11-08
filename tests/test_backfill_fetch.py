@@ -75,3 +75,78 @@ def test_backfill_drops_partial_bar_for_unfinished_session(monkeypatch):
         "SELECT date FROM bronze_prices ORDER BY date").fetchall()]
     assert dates == [datetime.date(2026, 8, 10)]
     assert total == 1 and missing == []
+
+
+# --- split capture: every split Yahoo reports lands in corporate_actions once
+
+
+def _frame_with_split(ratio, symbol="AAA"):
+    return pd.DataFrame({
+        "Date": [pd.Timestamp("2026-08-07"), pd.Timestamp("2026-08-10")],
+        "symbol": symbol, "open": 1.0, "high": 1.0, "low": 1.0,
+        "close": 1.0, "adj_close": 1.0, "volume": 10,
+        "dividend": 0.0, "split_ratio": [0.0, ratio]})
+
+
+def _events(con):
+    return con.execute(
+        "SELECT symbol, date, ratio FROM corporate_actions ORDER BY symbol, date"
+    ).fetchall()
+
+
+def test_backfill_logs_each_fetched_split_exactly_once(monkeypatch):
+    import datetime
+
+    import duckdb
+
+    import backfill
+
+    monkeypatch.setattr(backfill, "_fetch", lambda b, s: _frame_with_split(4.0))
+    con = duckdb.connect(":memory:")
+    backfill.backfill_prices(con, ["AAA"], "2026-08-01")
+    backfill.backfill_prices(con, ["AAA"], "2026-08-01")     # second run
+    assert _events(con) == [("AAA", datetime.date(2026, 8, 10), 4.0)]
+    # No split row in bronze is without its event (the STORY-000003 query).
+    assert con.execute(
+        "SELECT COUNT(*) FROM bronze_prices p "
+        "LEFT JOIN corporate_actions c USING (symbol, date) "
+        "WHERE p.split_ratio > 0 AND p.split_ratio <> 1 AND c.symbol IS NULL"
+    ).fetchone()[0] == 0
+
+
+def test_conflicting_split_ratio_is_printed_and_the_log_is_kept(
+        monkeypatch, capsys):
+    import datetime
+
+    import duckdb
+
+    import backfill
+
+    con = duckdb.connect(":memory:")
+    monkeypatch.setattr(backfill, "_fetch", lambda b, s: _frame_with_split(4.0))
+    backfill.backfill_prices(con, ["AAA"], "2026-08-01")
+    monkeypatch.setattr(backfill, "_fetch", lambda b, s: _frame_with_split(2.0))
+    backfill.backfill_prices(con, ["AAA"], "2026-08-01")
+    out = capsys.readouterr().out
+    assert "SPLIT RATIO CONFLICT AAA 2026-08-10" in out
+    assert "logged 4" in out and "reports 2" in out
+    assert _events(con) == [("AAA", datetime.date(2026, 8, 10), 4.0)]
+
+
+def test_splits_already_in_bronze_are_seeded_into_the_log(monkeypatch):
+    # The log starts empty on an existing warehouse: rows stored before the
+    # log existed are recorded from bronze, for symbols not in this fetch.
+    import datetime
+
+    import duckdb
+
+    import backfill
+
+    con = duckdb.connect(":memory:")
+    con.execute(backfill.SCHEMA)
+    con.execute("INSERT INTO bronze_prices (symbol, date, close, split_ratio) "
+                "VALUES ('OLD', '2021-07-20', 1.0, 10.0), "
+                "('OLD', '2021-07-21', 1.0, 0.0)")
+    monkeypatch.setattr(backfill, "_fetch", lambda b, s: pd.DataFrame())
+    backfill.backfill_prices(con, ["AAA"], "2026-08-01")
+    assert _events(con) == [("OLD", datetime.date(2021, 7, 20), 10.0)]

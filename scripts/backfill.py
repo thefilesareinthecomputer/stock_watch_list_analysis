@@ -30,6 +30,7 @@ import pandas as pd  # noqa: E402
 import yfinance as yf  # noqa: E402
 
 from common.config import TICKERS, BENCHMARK_TICKERS, HISTORY_START_DATE  # noqa: E402
+from common.corporate_actions import record_actions  # noqa: E402
 from common.positions import daily_symbols, load_positions  # noqa: E402
 from common.quality import (  # noqa: E402
     completed_session_cutoff, last_trading_session,
@@ -116,10 +117,35 @@ def stale_from_source(con, symbols, previous_session):
     return [(s, str(d)) for s, d in rows]
 
 
+def record_splits(con, frame, source="yfinance"):
+    """Log every split in `frame` (symbol, date, split_ratio) as a
+    corporate_actions event the first time it is seen. 0, NaN and 1 all mean
+    "no split" in the source. A ratio that disagrees with the log prints a
+    SPLIT RATIO CONFLICT line and the log keeps what it first recorded.
+    Returns the number of new events."""
+    if frame.empty or "split_ratio" not in frame:
+        return 0
+    ratio = pd.to_numeric(frame["split_ratio"], errors="coerce")
+    splits = frame.loc[ratio.notna() & (ratio != 0) & (ratio != 1.0),
+                       ["symbol", "date", "split_ratio"]]
+    events = [{"symbol": s, "date": d, "ratio": r}
+              for s, d, r in splits.itertuples(index=False)]
+    inserted, conflicts = record_actions(con, events, source=source)
+    for symbol, day, _, logged, reported in conflicts:
+        print(f"  SPLIT RATIO CONFLICT {symbol} {day}: logged {logged:g}, "
+              f"source reports {reported:g} - log unchanged", flush=True)
+    return inserted
+
+
 def backfill_prices(con, symbols, start):
     """Fetch and store raw history for symbols; idempotent per (symbol,
     window). Returns (rows_inserted, missing_symbols)."""
     con.execute(SCHEMA)
+    # Splits stored before the event log existed are recorded from bronze;
+    # idempotent, so an already-seeded log costs one query.
+    record_splits(con, con.execute(
+        f"SELECT symbol, date, split_ratio FROM {TABLE} "
+        "WHERE split_ratio > 0 AND split_ratio <> 1").df())
     run_id, ingest_ts = new_run_id(), now_ts()
     total, missing = 0, []
 
@@ -134,6 +160,7 @@ def backfill_prices(con, symbols, start):
             # A run during or before the session drags in a partial bar
             # for today; incomplete sessions never reach bronze.
             df = df[df["date"] <= completed_session_cutoff()]
+            record_splits(con, df)
 
         if not df.empty:
             df["_run_id"] = run_id

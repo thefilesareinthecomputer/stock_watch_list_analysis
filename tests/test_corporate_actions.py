@@ -89,6 +89,13 @@ def test_batch_mixes_new_known_and_conflicting(con):
     assert [r[0] for r in _rows(con)] == ["ABC", "XYZ"]
 
 
+def test_timestamp_dates_land_as_dates(con):
+    import pandas as pd
+    record_actions(con, [{**SPLIT, "date": pd.Timestamp("2024-06-10")}],
+                   source="yfinance")
+    assert splits_for(con, "xyz") == [(date(2024, 6, 10), 10.0)]
+
+
 def test_reverse_split_is_a_split_with_a_ratio_below_one(con):
     inserted, _ = record_actions(
         con, [{**SPLIT, "ratio": 0.1}], source="yfinance")   # 1-for-10
