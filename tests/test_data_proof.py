@@ -74,6 +74,11 @@ def test_unmigrated_warehouse_fails_the_vintage_check():
     assert name == "vintage" and not ok and "SERVED (not migrated)" in detail
 
 
+def test_no_daily_symbols_is_ok_not_a_crash():
+    name, ok, detail = data_proof.check_stale_from_source(_warehouse(), [], now=NOW)
+    assert ok and "no daily symbols" in detail
+
+
 def test_old_revisions_are_not_todays_news():
     con = _warehouse()
     con.execute("CREATE TABLE source_revisions (symbol VARCHAR, date DATE, "

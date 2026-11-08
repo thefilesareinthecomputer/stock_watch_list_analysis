@@ -9,10 +9,9 @@ Order of operations, each gated on the one before:
    date) appears twice.
 2. CHECKPOINT, fingerprint (row count, hash sum), copy the file to
    <backup-dir>/market_<date>.duckdb, open the copy read-only and confirm
-   the same fingerprint. The backup convention (global agents standard):
-   one home-level directory, one folder per repo, dated files inside,
-   never inside a repo; a rollback copy, deleted once the migration is
-   verified.
+   the same fingerprint. The backup convention: one home-level directory,
+   one folder per repo, dated files inside, never inside a repo; a
+   rollback copy, deleted once the migration is verified.
 3. In ONE transaction: run every split symbol's rows through
    common.traded_prices.to_traded (each row restated only for the splits
    its capture run had absorbed, and never for a split the source served
@@ -48,7 +47,8 @@ REPORTS = os.path.join(ROOT, "reports")
 # ~/backups/<repo folder name>/ - the standard home for rollback copies.
 BACKUP_DIR = os.path.join(os.path.expanduser("~"), "backups", os.path.basename(ROOT))
 TABLE = "bronze_prices"
-# Closes published outside Yahoo; the migration must reproduce every one.
+# Closes published outside Yahoo; the migration must reproduce every one
+# present in the warehouse (a symbol it does not hold is reported as absent).
 KNOWN_CLOSES = [(r["symbol"], r["date"], r["close"]) for r in load_known_closes()]
 TOLERANCE = 0.01
 

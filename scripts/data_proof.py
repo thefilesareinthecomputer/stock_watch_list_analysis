@@ -89,6 +89,8 @@ def check_held(con, held, now=None):
 
 
 def check_stale_from_source(con, symbols, now=None):
+    if not symbols:
+        return ("stale from source", True, "no daily symbols configured")
     expected = last_trading_session(completed_session_cutoff(now))
     previous = last_trading_session(expected - timedelta(days=1))
     marks = ", ".join("?" for _ in symbols)
