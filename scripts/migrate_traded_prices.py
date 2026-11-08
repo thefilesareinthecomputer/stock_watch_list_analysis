@@ -1,14 +1,18 @@
 """One-time migration: bronze_prices from Yahoo's restated closes to the
 closes that actually traded (STORY-000009).
 
-    uv run python scripts/migrate_traded_prices.py --backup-dir /path/outside/repo
+    uv run python scripts/migrate_traded_prices.py                  # backup to ~/backups/<repo>/
+    uv run python scripts/migrate_traded_prices.py --backup-dir DIR  # elsewhere, still outside the repo
 
 Order of operations, each gated on the one before:
 1. Refuse if the warehouse is already marked traded, or if any (symbol,
    date) appears twice.
 2. CHECKPOINT, fingerprint (row count, hash sum), copy the file to
    <backup-dir>/market_<date>.duckdb, open the copy read-only and confirm
-   the same fingerprint.
+   the same fingerprint. The backup convention (global agents standard):
+   one home-level directory, one folder per repo, dated files inside,
+   never inside a repo; a rollback copy, deleted once the migration is
+   verified.
 3. In ONE transaction: run every split symbol's pre-split rows through
    common.traded_prices.to_traded and write open/high/low/close/dividend/
    volume back; check the known closes; confirm the row count; set
@@ -38,6 +42,8 @@ from common.warehouse_meta import (  # noqa: E402
 
 WAREHOUSE = os.path.join(ROOT, "warehouse", "market.duckdb")
 REPORTS = os.path.join(ROOT, "reports")
+# ~/backups/<repo folder name>/ - the standard home for rollback copies.
+BACKUP_DIR = os.path.join(os.path.expanduser("~"), "backups", os.path.basename(ROOT))
 TABLE = "bronze_prices"
 # Closes published outside Yahoo; the migration must reproduce every one.
 KNOWN_CLOSES = [(r["symbol"], r["date"], r["close"]) for r in load_known_closes()]
@@ -147,9 +153,10 @@ def _write_report(path, backup, before, after, changed, known):
         f.write("\n".join(lines))
 
 
-def migrate(warehouse=WAREHOUSE, backup_dir=None, reports_dir=REPORTS, today=None):
+def migrate(warehouse=WAREHOUSE, backup_dir=BACKUP_DIR, reports_dir=REPORTS,
+            today=None):
     if not backup_dir:
-        sys.exit("--backup-dir is required")
+        sys.exit("a backup directory is required")
     real_backup = os.path.realpath(backup_dir)
     if real_backup == os.path.realpath(ROOT) or real_backup.startswith(
             os.path.realpath(ROOT) + os.sep):
@@ -187,8 +194,9 @@ def migrate(warehouse=WAREHOUSE, backup_dir=None, reports_dir=REPORTS, today=Non
 def main():
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--backup-dir", required=True,
-                        help="directory outside the repo for the pre-migration copy")
+    parser.add_argument("--backup-dir", default=BACKUP_DIR,
+                        help="directory outside the repo for the pre-migration "
+                             "copy (default: ~/backups/<repo>)")
     args = parser.parse_args()
     migrate(WAREHOUSE, args.backup_dir, REPORTS)
 

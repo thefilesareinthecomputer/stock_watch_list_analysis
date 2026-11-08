@@ -134,6 +134,13 @@ def test_known_close_check_failure_rolls_back(warehouse, tmp_path, monkeypatch):
     assert not _traded(warehouse)
 
 
+def test_default_backup_dir_follows_the_standard():
+    # One home-level directory, one folder per repo, outside any repo.
+    home = os.path.expanduser("~")
+    assert mig.BACKUP_DIR == os.path.join(home, "backups", os.path.basename(mig.ROOT))
+    assert not os.path.realpath(mig.BACKUP_DIR).startswith(os.path.realpath(mig.ROOT))
+
+
 def test_backup_dir_inside_the_repo_is_refused(warehouse):
     repo_dir = os.path.join(os.path.dirname(__file__), "..", "warehouse")
     with pytest.raises(SystemExit, match="outside the repo"):
