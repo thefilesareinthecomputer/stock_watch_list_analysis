@@ -32,7 +32,9 @@ reference for anyone building a small lakehouse on a budget.
 run. The scoring shown here (methodology v1) is legacy and unvalidated; the
 successor lives in the local-first engine (methodology v2: walk-forward
 validated with stated caveats, emitting recorded monthly call rounds since
-2026-08). The Databricks surface remains a research view, not advice - see
+2026-08). Direction, 2026-11-09: Databricks becomes a serving layer for what
+the local engine produces, and the job here is legacy until that design
+lands. The Databricks surface remains a research view, not advice - see
 [`SPEC.md`](SPEC.md) for the architecture; the program's phase specs live
 in the private `tasks/` folder and its knowledge vault in the private
 `PROJECTS/` folder (both gitignored, local-only).

@@ -34,8 +34,10 @@ secrets flow from `.env` at deploy (`DATABRICKS_HOST` is a repo secret in CI). C
 secrets and the `WATCHLIST` repo secret: README "Quick Start" step 3.
 
 ## Local-first development (DuckDB)
-Databricks is the production target; iteration happens locally (~2 min against
-~18 min plus quota per run there).
+The engine lives here and runs locally (~2 min a build). Databricks is the
+serving layer for what the laptop produces (ruled 2026-11-09): it visualizes
+the local engine's output and re-invents nothing; its v1 pipeline is legacy
+until the serving design replaces it.
 ```bash
 uv run python scripts/backfill.py               # yfinance -> bronze_prices: appends new sessions in traded terms, never rewrites
 uv run python scripts/backfill_fundamentals.py  # SEC EDGAR -> bronze_fundamentals
