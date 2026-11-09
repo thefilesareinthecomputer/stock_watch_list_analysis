@@ -18,9 +18,9 @@ variables:
     description: "Failure-notification email, supplied at deploy via BUNDLE_VAR_alert_email from .env"
     default: ""
 
-workspace:
-  host: https://dbc-fc3cf8bd-4b59.cloud.databricks.com
-
+# The workspace host is private and is not written here. The CLI resolves it
+# from DATABRICKS_HOST (set in .env locally, a repo secret in CI) or from the
+# profile `databricks auth login --host "$DATABRICKS_HOST"` creates.
 
 resources:
   jobs:

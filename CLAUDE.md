@@ -27,9 +27,10 @@ uv sync
 uv run pytest tests/ -v              # Spark tests need JDK 17 on JAVA_HOME, else they skip
 set -a; source .env; set +a          # FRED_API_KEY, ALERT_EMAIL
 BUNDLE_VAR_fred_api_key="$FRED_API_KEY" BUNDLE_VAR_alert_email="$ALERT_EMAIL" \
-databricks bundle deploy             # auth: OAuth via `databricks auth login`, no PAT
+databricks bundle deploy             # auth: OAuth via `databricks auth login --host "$DATABRICKS_HOST"`, no PAT
 ```
-No private values in `databricks.yml`; secrets flow from `.env` at deploy. CI
+No private values in `databricks.yml`, the workspace host included; it and the
+secrets flow from `.env` at deploy (`DATABRICKS_HOST` is a repo secret in CI). CI
 secrets and the `WATCHLIST` repo secret: README "Quick Start" step 3.
 
 ## Local-first development (DuckDB)

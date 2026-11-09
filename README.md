@@ -600,8 +600,10 @@ uv run python scripts/watchlist.py check
 # Without WATCHLIST set, the pipeline falls back to the 10-ticker starter list
 # in src/common/tickers.example.txt.
 
-# Databricks auth - OAuth, nothing stored in the repo (per device):
-databricks auth login --host https://dbc-fc3cf8bd-4b59.cloud.databricks.com
+# Databricks auth - OAuth, nothing stored in the repo (per device). The
+# workspace host is private: set DATABRICKS_HOST in .env, then:
+set -a; source .env; set +a
+databricks auth login --host "$DATABRICKS_HOST"
 ```
 
 ### 2. Install and test
