@@ -5,10 +5,10 @@ patterns, deploy steps, and design decisions live in [`README.md`](README.md)**;
 first principles and operational constraints (incl. the Free Edition build
 breakers) in [`SPEC.md`](SPEC.md). This file is agent guidance only.
 
-Project knowledge vault: `PROJECTS/stocks/` - its `AGENTS.md` is the contract, its
+Project knowledge vault: `PROJECTS/stocks/`. Its `AGENTS.md` is the contract, its
 graph is `PROJECTS/stocks/markdown-kg/`, and its deliverables are in
-`PROJECTS/stocks-DELIVERABLES/`. Private and gitignored; query it through the
-graph rather than reading the notes whole.
+`PROJECTS/stocks-DELIVERABLES/`. The vault is private and gitignored; query it
+through the graph rather than reading the notes whole.
 
 ## Working agreement
 - User runs all installs and git commands. Assistant writes to requirements files
@@ -35,9 +35,9 @@ secrets and the `WATCHLIST` repo secret: README "Quick Start" step 3.
 
 ## Local-first development (DuckDB)
 The engine lives here and runs locally (~2 min a build). Databricks is the
-serving layer for what the laptop produces (ruled 2026-11-09): it visualizes
-the local engine's output and re-invents nothing; its v1 pipeline is legacy
-until the serving design replaces it.
+serving layer for the local engine's output (decided 2026-11-09): it visualizes
+that output and reinvents nothing. Its v1 pipeline is legacy until the serving
+design replaces it.
 ```bash
 uv run python scripts/backfill.py               # yfinance -> bronze_prices: appends new sessions in traded terms, never rewrites
 uv run python scripts/backfill_fundamentals.py  # SEC EDGAR -> bronze_fundamentals
