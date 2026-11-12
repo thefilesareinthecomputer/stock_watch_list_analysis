@@ -95,3 +95,89 @@ def test_run_lock_refuses_a_second_concurrent_run(tmp_path):
                 pass
     with run_lock(lock):                      # released after the first
         pass
+
+
+# --- the daily page: written after the chain, passed or failed
+
+
+def _scratch_cadence(tmp_path, monkeypatch, result, vault=True):
+    """scripts/cadence.py pointed at scratch paths, its chain stubbed to
+    return `result`. No real ledger, report, warehouse or vault is touched."""
+    import datetime as dt
+
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..",
+                                    "scripts"))
+    import cadence
+
+    page = tmp_path / "vault" / "agents-daily.md"
+    if vault:
+        page.parent.mkdir()
+    reports = tmp_path / "reports"
+    reports.mkdir()
+    logs = tmp_path / "logs"
+    for name, value in (
+            ("LOGS", str(logs)), ("LEDGER", str(logs / "cadence.jsonl")),
+            ("LOCK", str(logs / "cadence.lock")), ("PAGE", str(page)),
+            ("REPORTS", str(reports)),
+            ("WAREHOUSE", str(tmp_path / "none.duckdb")),
+            ("POSITIONS", str(tmp_path / "none.md"))):
+        monkeypatch.setattr(cadence, name, value)
+    monkeypatch.setattr(cadence, "last_trading_session",
+                        lambda reference: dt.date(2026, 11, 11))
+    monkeypatch.setattr(cadence, "run_chain", result)
+    return cadence, page, reports
+
+
+def test_a_failed_backfill_still_writes_a_dated_section(tmp_path, monkeypatch):
+    cadence, page, _ = _scratch_cadence(
+        tmp_path, monkeypatch, lambda steps, runner, sleep: (1, "backfill"))
+    assert cadence.cmd_run() == 1
+    text = page.read_text()
+    assert "## 2026-11-11 - FAILED at backfill" in text
+    assert "Last session covered: none" in text
+    assert "Data checks: not run" in text and "Guard: not run" in text
+    assert text.rstrip().splitlines()[-1].startswith("- [[notes-updates]]")
+
+
+def test_a_passed_run_files_its_checks_and_a_rerun_replaces_the_section(
+        tmp_path, monkeypatch):
+    def chain(steps, runner, sleep):
+        (reports / "data_proof_2026-11-11.md").write_text(
+            "| check | status | detail |\n|---|---|---|\n"
+            "| vintage | ok | x |\n| held names | ATTENTION | DEAD 1: AAA |\n")
+        (reports / "guard_2026-11-11.md").write_text(
+            "New today: AAA (drawdown)\n\n## Needs attention\n- AAA [x]\n")
+        return 0, None
+
+    cadence, page, reports = _scratch_cadence(tmp_path, monkeypatch, chain)
+    assert cadence.cmd_run() == 0
+    text = page.read_text()
+    assert "## 2026-11-11 - passed" in text
+    assert "1 of 2 ok; attention: held names" in text
+    assert "1 new alerts, 1 holdings flagged (dry run: no alert recorded)" in text
+    assert "AAA" not in text
+
+    # The session is covered, so a second firing does nothing to the page.
+    assert cadence.cmd_run() == 0
+    assert page.read_text() == text
+
+
+def test_a_report_left_by_an_earlier_attempt_is_not_read_as_this_runs(
+        tmp_path, monkeypatch):
+    cadence, page, reports = _scratch_cadence(
+        tmp_path, monkeypatch, lambda steps, runner, sleep: (1, "backfill"))
+    stale = reports / "data_proof_2026-11-11.md"
+    stale.write_text("| vintage | ok | x |\n")
+    os.utime(stale, (0, 0))
+    assert cadence.cmd_run() == 1
+    assert "Data checks: not run" in page.read_text()
+
+
+def test_no_vault_skips_the_page_and_keeps_the_runs_result(
+        tmp_path, monkeypatch, capsys):
+    cadence, page, _ = _scratch_cadence(
+        tmp_path, monkeypatch, lambda steps, runner, sleep: (0, None),
+        vault=False)
+    assert cadence.cmd_run() == 0
+    assert not page.exists()
+    assert "daily page skipped" in capsys.readouterr().out

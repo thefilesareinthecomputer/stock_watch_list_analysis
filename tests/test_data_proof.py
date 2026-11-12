@@ -129,6 +129,22 @@ def test_the_ruled_defects_file_is_well_formed():
         assert d["check"] == "adjustment mismatch"
 
 
+def test_the_report_file_is_named_by_the_completed_session():
+    # A Saturday run covers Friday's session, and the guard report from the
+    # same run is named by that session too: one date per run.
+    path = data_proof.report_path(NOW)
+    assert os.path.basename(path) == "data_proof_2026-11-06.md"
+
+
+def test_the_report_body_states_when_it_was_written():
+    con = _warehouse()
+    checks, latest = data_proof.run_checks(con, ["AAA", "BBB"], [], now=NOW)
+    text = data_proof.render(checks, latest, date(2026, 11, 6),
+                             written="2026-11-07T14:00:00")
+    assert "# Data proof - 2026-11-06" in text
+    assert "Written 2026-11-07T14:00:00." in text
+
+
 def test_cadence_runs_the_report_after_the_build():
     import cadence
 

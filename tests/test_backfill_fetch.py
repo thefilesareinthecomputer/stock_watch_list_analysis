@@ -394,3 +394,109 @@ def test_known_symbols_fetch_from_the_overlap_and_new_ones_from_start(monkeypatc
     backfill.backfill_prices(con, ["OLD", "NEW"], "2010-01-01")
     assert sorted(calls) == [(("NEW",), "2010-01-01"),
                              (("OLD",), "2026-07-31")]
+
+
+# --- a fetch that brings nothing back is a failed step, not a quiet success
+
+
+def _d(text):
+    import datetime
+    return datetime.date.fromisoformat(text)
+
+
+def test_an_empty_fetch_leaves_every_live_symbol_short():
+    from backfill import live_shortfall
+
+    before = {f"S{i}": _d("2026-11-09") for i in range(50)}
+    short, live = live_shortfall(before, dict(before), _d("2026-11-10"),
+                                 list(before))
+    assert len(live) == 50 and short == sorted(before)
+
+
+def test_a_symbol_that_stopped_weeks_ago_is_not_live():
+    # A delisted name returns no rows on every run; it is stale from
+    # source and must not fail the step forever.
+    from backfill import live_shortfall
+
+    before = {"LIVE": _d("2026-11-09"), "GONE": _d("2026-08-14")}
+    after = {"LIVE": _d("2026-11-10"), "GONE": _d("2026-08-14")}
+    short, live = live_shortfall(before, after, _d("2026-11-10"),
+                                 ["LIVE", "GONE"])
+    assert live == ["LIVE"] and short == []
+
+
+def test_a_session_already_stored_is_not_short():
+    from backfill import live_shortfall
+
+    stored = {"AAA": _d("2026-11-10"), "BBB": _d("2026-11-10")}
+    assert live_shortfall(stored, dict(stored), _d("2026-11-10"),
+                          ["AAA", "BBB"])[0] == []
+
+
+def test_a_symbol_with_nothing_stored_yet_is_live():
+    # A swapped watchlist: the only stored name is long dead. The new names
+    # must still fail an outage. The dead name stays in the live set for
+    # this one run, until the new names give the warehouse a newer bar.
+    from backfill import live_shortfall
+
+    before = {"GONE": _d("2026-08-14")}
+    outage = live_shortfall(before, dict(before), _d("2026-11-10"),
+                            ["GONE", "NEW1", "NEW2"])
+    assert outage == (["GONE", "NEW1", "NEW2"], ["GONE", "NEW1", "NEW2"])
+    loaded = {**before, "NEW1": _d("2026-11-10"), "NEW2": _d("2026-11-10")}
+    assert live_shortfall(before, loaded, _d("2026-11-10"),
+                          ["GONE", "NEW1", "NEW2"])[0] == ["GONE"]
+
+
+def test_an_empty_warehouse_counts_every_requested_symbol_as_live():
+    from backfill import live_shortfall
+
+    short, live = live_shortfall({}, {}, _d("2026-11-10"), ["AAA", "BBB"])
+    assert live == ["AAA", "BBB"] and short == ["AAA", "BBB"]
+
+
+def _run_main(monkeypatch, tmp_path, fetch, seed):
+    import duckdb
+
+    import backfill
+
+    warehouse = str(tmp_path / "market.duckdb")
+    con = duckdb.connect(warehouse)
+    con.execute(backfill.SCHEMA)
+    from common.warehouse_meta import BRONZE_TERMS, TRADED, set_meta
+    set_meta(con, BRONZE_TERMS, TRADED)
+    for symbol, day in seed:
+        con.execute("INSERT INTO bronze_prices (symbol, date, close) "
+                    "VALUES (?, ?, 100.0)", [symbol, day])
+    con.close()
+    monkeypatch.setattr(backfill, "WAREHOUSE", warehouse)
+    monkeypatch.setattr(backfill, "_fetch", fetch)
+    monkeypatch.setattr(backfill, "daily_symbols",
+                        lambda *a: sorted({s for s, _ in seed}))
+    monkeypatch.setattr(backfill, "ensure_quote_types", lambda con, s: 0)
+    monkeypatch.setattr(backfill, "completed_session_cutoff",
+                        lambda now=None: _d("2026-11-10"))
+    monkeypatch.setattr(sys, "argv", ["backfill.py"])
+    return backfill.main()
+
+
+def test_main_exits_nonzero_when_the_source_serves_nothing(
+        monkeypatch, tmp_path, capsys):
+    # The outage case: every batch comes back empty. The chain retries only
+    # on a non-zero exit, so this must not read as success.
+    seed = [(f"S{i}", "2026-11-09") for i in range(10)]
+    code = _run_main(monkeypatch, tmp_path, lambda b, s: pd.DataFrame(), seed)
+    assert code == 1
+    assert "FETCH SHORT" in capsys.readouterr().out
+
+
+def test_main_exits_zero_when_only_a_dead_symbol_returns_nothing(
+        monkeypatch, tmp_path):
+    seed = [(f"S{i}", "2026-11-09") for i in range(10)] + [
+        ("GONE", "2026-08-14")]
+
+    def fetch(batch, start):
+        live = [s for s in batch if s != "GONE"]
+        return pd.concat([_bars(s, {"2026-11-10": 101.0}) for s in live])
+
+    assert _run_main(monkeypatch, tmp_path, fetch, seed) == 0

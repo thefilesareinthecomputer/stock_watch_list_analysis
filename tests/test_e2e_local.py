@@ -149,3 +149,44 @@ def test_full_local_chain(tmp_path):
     assert np.isfinite(result["ic"]["mean"])
     assert np.isfinite(result["excess_vs_equal_weight_net"])
     assert trial_count(log_path) == 1
+
+
+def _add_short_history(con, symbol="NEWCO", bars=50):
+    for date in pd.bdate_range(end="2024-03-22", periods=bars):
+        con.execute(
+            "INSERT INTO bronze_prices VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            [symbol, str(date.date()), 20.0, 20.2, 19.8, 20.0, None,
+             1_000_000, 0.0, None, "r"])
+
+
+def test_a_short_history_symbol_has_adjusted_prices_and_no_signals():
+    # A recently listed holding has too few bars for the indicators, but the
+    # guard values holdings from silver_adjusted_prices: without its rows
+    # there the holding reads as dead.
+    con = duckdb.connect(":memory:")
+    _seed_warehouse(con)
+    _add_short_history(con)
+
+    signals, adjusted = build_signals(con, SYMBOLS + ["NEWCO"])
+    assert len(adjusted[adjusted["symbol"] == "NEWCO"]) == 50
+    assert "NEWCO" not in set(signals["symbol"])
+    assert set(signals["symbol"]) == set(SYMBOLS)
+
+
+def test_an_indicator_failure_keeps_that_symbols_adjusted_prices(monkeypatch):
+    import build_local
+
+    real = build_local.build_signal_series
+
+    def flaky(ohlcv, symbol, info):
+        if symbol == "FLAT":
+            raise ValueError("indicator blew up")
+        return real(ohlcv, symbol, info=info)
+
+    monkeypatch.setattr(build_local, "build_signal_series", flaky)
+    con = duckdb.connect(":memory:")
+    _seed_warehouse(con)
+
+    signals, adjusted = build_signals(con, SYMBOLS)
+    assert "FLAT" not in set(signals["symbol"])
+    assert len(adjusted[adjusted["symbol"] == "FLAT"]) == 320

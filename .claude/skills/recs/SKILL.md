@@ -45,8 +45,10 @@ After `trade`, echo the script's one-line confirmation and nothing else.
 ## Freshness gate
 
 Before `buys` or `sells`, run `uv run python scripts/fresh.py`. Exit 0
-means current - proceed. Exit 1 means the warehouse lags the last
-completed session - run `refresh` first, then proceed. Exit 2 means no
+means current and proven - proceed. Exit 1 with a `STALE` line means the
+warehouse lags the last completed session - run `refresh` first, then
+proceed. Exit 1 with a `NOT TRUSTED` line names a failed check that a
+refresh may not fix - report it and stop. Exit 2 means no
 warehouse - run `scripts/backfill.py` in full. Never generate a report
 over stale data without saying so; if the user explicitly wants the
 report anyway, state the data vintage next to the file path.

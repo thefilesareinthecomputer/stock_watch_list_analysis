@@ -34,13 +34,13 @@ import duckdb  # noqa: E402
 import pandas as pd  # noqa: E402
 
 from backtest.returns import DECAY_HORIZONS, build_forward_returns  # noqa: E402
-from common.adjustments import adjusted_prices, max_divergence  # noqa: E402
+# ADJ_TOLERANCE: our adjusted closes must match the source's own within it;
+# anything wider is printed by name every build (2026-11-07: a
+# double-applied split hid behind a self-comparing test for months).
+from common.adjustments import (  # noqa: E402
+    ADJ_TOLERANCE, adjusted_prices, max_divergence,
+)
 from common.corporate_actions import splits_for  # noqa: E402
-
-# Our adjusted closes must match the source's own within this; anything
-# wider is printed by name every build (2026-11-07: a double-applied split
-# hid behind a self-comparing test for months).
-ADJ_TOLERANCE = 0.02
 from common.fundamentals import build_fundamental_tables  # noqa: E402
 from common.indicators import build_signal_series  # noqa: E402
 from common.tables import has_table  # noqa: E402
@@ -68,7 +68,7 @@ def build_signals(con, symbols, as_of=None):
             "ORDER BY date",
             [symbol, as_of or "9999-12-31"]
         ).df()
-        if len(raw) < 200:  # indicators need ~200 sessions of warmup
+        if raw.empty:
             continue
 
         splits = splits_for(con, symbol)
@@ -81,6 +81,10 @@ def build_signals(con, symbols, as_of=None):
         keep = adj[["date", "adj_open", "adj_close"]].copy()
         keep.insert(0, "symbol", symbol)
         adj_frames.append(keep)
+        # Adjusted prices are kept for every symbol: the guard and the held
+        # returns read them, and a short history must not read as dead.
+        if len(raw) < 200:  # indicators need ~200 sessions of warmup
+            continue
         # build_signal_series expects lowercase OHLCV, matching silver's schema
         # rather than yfinance's capitalised frame.
         ohlcv = pd.DataFrame({

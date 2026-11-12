@@ -43,13 +43,13 @@ def _con():
                 "deteriorating BOOLEAN)")
     con.execute("INSERT INTO gold_held_positions VALUES "
                 "('AAA', 'brokerage', 10, TRUE, 1, 'buy', FALSE), "
-                "('GDS', 'brokerage', 5, TRUE, 40, NULL, TRUE)")
+                "('HELDCO', 'brokerage', 5, TRUE, 40, NULL, TRUE)")
     con.execute("CREATE TABLE gold_line_of_sight (symbol VARCHAR, "
                 "close DOUBLE, deteriorating BOOLEAN, emerging BOOLEAN, "
-                "mom_pct DOUBLE)")
+                "mom_pct DOUBLE, as_of_date DATE)")
     con.execute("INSERT INTO gold_line_of_sight VALUES "
-                "('GDS', 12.0, TRUE, FALSE, 0.1), "
-                "('NEWCO', 8.0, FALSE, TRUE, 0.97)")
+                "('HELDCO', 12.0, TRUE, FALSE, 0.1, '2026-07-31'), "
+                "('NEWCO', 8.0, FALSE, TRUE, 0.97, '2026-07-31')")
     con.execute("CREATE TABLE bronze_prices (symbol VARCHAR, date DATE, "
                 "close DOUBLE)")
     return con
@@ -57,7 +57,7 @@ def _con():
 
 def _trades():
     return parse_trades([
-        '{"date": "2024-05-01", "symbol": "GDS", "account": "brokerage", '
+        '{"date": "2024-05-01", "symbol": "HELDCO", "account": "brokerage", '
         '"side": "buy", "qty": 5, "price": 30.0, "seed": true}'])
 
 
@@ -77,19 +77,26 @@ def test_report_carries_round_calls_and_caveats():
 
 def test_report_flags_deteriorating_held_position():
     report = build_report(_con(), [ROUND], [], TODAY)
-    assert "GDS" in report and "DETERIORATING (down 3m, 6m, 12m)" in report
+    assert "HELDCO" in report and "DETERIORATING (down 3m, 6m, 12m)" in report
 
 
 def test_report_harvest_section_with_wash_sale_reminder():
     report = build_report(_con(), [ROUND], _trades(), TODAY)
     assert "Loss harvest" in report
-    assert "GDS (brokerage, 5 sh @ 30.00, now 12.00, -60.0%" in report
+    assert "HELDCO (brokerage, 5 sh @ 30.00, now 12.00, -60.0%" in report
     assert "do not rebuy" in report
 
 
 def test_report_labels_emerging_as_unvalidated():
     report = build_report(_con(), [ROUND], [], TODAY)
     assert "UNVALIDATED SCREEN" in report and "NEWCO" in report
+
+
+def test_advisory_states_the_screens_date_and_age():
+    # The screen is rebuilt monthly by backfill_universe.py, not by the daily
+    # build: without its date a months-old screen reads as today's.
+    report = build_report(_con(), [ROUND], [], TODAY)
+    assert "Screen as of 2026-07-31, 12 days old." in report
 
 
 def test_private_outputs_are_gitignored():

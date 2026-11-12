@@ -92,6 +92,30 @@ def max_divergence(df: pd.DataFrame, splits) -> float:
     return float(np.max(np.abs(ours[mask] - reference[mask]) / reference[mask]))
 
 
+# The reconciliation gate shared by the build, the proof report and the
+# freshness gate: a derived series further than this from the source's own
+# adj_close is a mismatch.
+ADJ_TOLERANCE = 0.02
+
+
+def divergent(con, symbols, tolerance=ADJ_TOLERANCE):
+    """[(symbol, divergence)] for the symbols whose derived adjusted series
+    departs from the source's adj_close by more than `tolerance`."""
+    from common.corporate_actions import splits_for
+
+    out = []
+    for symbol in symbols:
+        raw = con.execute(
+            "SELECT date, close, adj_close, dividend, _run_id FROM bronze_prices "
+            "WHERE symbol = ? ORDER BY date", [symbol]).df()
+        if raw.empty:
+            continue
+        divergence = max_divergence(raw, splits_for(con, symbol))
+        if divergence > tolerance:
+            out.append((symbol, divergence))
+    return out
+
+
 def adjusted_prices(df: pd.DataFrame, splits) -> pd.DataFrame:
     """Return `df` with open/high/low/close back-adjusted, plus the factor.
 

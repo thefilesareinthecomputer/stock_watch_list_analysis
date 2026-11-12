@@ -48,9 +48,10 @@ uv run python scripts/validate_calls.py         # call state machine replay
 uv run python scripts/rebalance.py              # settle -> report -> emit call round (--off-cycle needs a registry event)
 uv run python scripts/decide.py                 # private decision report from the latest round
 uv run python scripts/weekly_review.py          # weekly sell review: act/too-soon/punt per held name (Mon pre-open)
-uv run python scripts/data_proof.py             # daily data-proof report -> reports/data_proof_<date>.md (vintage, stale, revisions, known closes, mismatches)
+uv run python scripts/data_proof.py             # daily data-proof report -> reports/data_proof_<session>.md (vintage, stale, revisions, known closes, mismatches); informs, always exits 0
+uv run python scripts/fresh.py                  # the gate: exit 1 on stale bronze, a held name behind or missing adjusted prices, stale rate > 2%, a failed known close, an unruled held mismatch
 uv run python scripts/guard.py                  # daily guard: drawdown/size/stale alerts on every holding (--dry-run, --replay A B)
-uv run python scripts/cadence.py run            # the daily chain launchd runs (backfill -> build -> fresh -> guard), when due
+uv run python scripts/cadence.py run            # the daily chain launchd runs (backfill -> build -> proof -> fresh -> guard), when due; then one dated section on the vault's daily page, passed or failed
 uv run python scripts/cadence.py install        # print the launchd plist; --yes writes ~/Library/LaunchAgents and loads it
 uv run python scripts/trade.py buy SYM QTY --account "A"  # record a fill: trades.jsonl + POSITIONS.md together (also sell/seed/show)
 uv run python scripts/backfill_universe.py      # broad universe + line of sight (monthly)
@@ -97,6 +98,6 @@ reads the env var first.
 
 ## Code size - track after major changes to prevent bloat
 ```bash
-find src   -name "*.py" -exec wc -l {} +   # ~7886 across 62 files
-find tests -name "*.py" -exec wc -l {} +   # ~8179 across 50 files
+find src   -name "*.py" -exec wc -l {} +   # ~8047 across 63 files
+find tests -name "*.py" -exec wc -l {} +   # ~8689 across 51 files
 ```

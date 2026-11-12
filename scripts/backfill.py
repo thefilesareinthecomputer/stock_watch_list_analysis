@@ -39,7 +39,7 @@ from common.config import TICKERS, BENCHMARK_TICKERS, HISTORY_START_DATE  # noqa
 from common.corporate_actions import record_actions, splits_for  # noqa: E402
 from common.positions import daily_symbols, load_positions  # noqa: E402
 from common.quality import (  # noqa: E402
-    completed_session_cutoff, last_trading_session,
+    STALE_TOLERANCE, completed_session_cutoff, last_trading_session,
 )
 from common.run_context import new_run_id, now_ts  # noqa: E402
 from common.security import ensure_quote_types  # noqa: E402
@@ -55,6 +55,9 @@ CHUNK = 25
 # Sessions re-fetched before a symbol's newest stored row. They are never
 # re-inserted; they are the window in which a source revision can be seen.
 OVERLAP_DAYS = 7
+# A symbol stored within this many days of the warehouse's newest bar was
+# trading at the last good run, so the fetch owes it the expected session.
+LIVE_WINDOW_DAYS = 7
 
 SCHEMA = """
     CREATE TABLE IF NOT EXISTS bronze_prices (
@@ -169,6 +172,24 @@ def _last_stored(con, symbols):
     return dict(con.execute(
         f"SELECT symbol, MAX(date) FROM {TABLE} WHERE symbol IN ({marks}) "
         "GROUP BY symbol", list(symbols)).fetchall())
+
+
+def live_shortfall(before, after, expected, symbols):
+    """(short, live): the live symbols still lacking the expected session.
+
+    `before` and `after` are {symbol: newest stored session} around the
+    fetch. A symbol is live unless it was already stored more than
+    LIVE_WINDOW_DAYS before the warehouse's own newest bar: a name that
+    stopped weeks ago is stale from source and returns nothing on every
+    run, while an outage leaves every live name short. A symbol with nothing
+    stored yet is live, so a new watchlist cannot pass an outage.
+    """
+    floor = (max(before.values()) - timedelta(days=LIVE_WINDOW_DAYS)
+             if before else None)
+    live = sorted(s for s in symbols
+                  if s not in before or before[s] >= floor)
+    short = [s for s in live if after.get(s) is None or after[s] < expected]
+    return short, live
 
 
 def _traded_rows(con, df):
@@ -301,6 +322,8 @@ def main():
 
     os.makedirs(os.path.dirname(WAREHOUSE), exist_ok=True)
     con = duckdb.connect(WAREHOUSE)
+    con.execute(SCHEMA)
+    before = _last_stored(con, symbols)
     total, missing = backfill_prices(con, symbols, start)
 
     fetched = ensure_quote_types(con, symbols)
@@ -320,8 +343,17 @@ def main():
     if old:
         print(f"  STALE FROM SOURCE (newest bar older than {previous}): "
               + ", ".join(f"{s} {d}" for s, d in old))
+    short, live = live_shortfall(before, _last_stored(con, symbols),
+                                 expected, symbols)
     con.close()
+    # An outage returns empty frames, not an error. The daily chain retries
+    # only on a non-zero exit, so a short fetch has to be one.
+    if len(short) > STALE_TOLERANCE * len(live):
+        print(f"  FETCH SHORT: {len(short)}/{len(live)} live symbols lack "
+              f"{expected} - the source served nothing for them")
+        return 1
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

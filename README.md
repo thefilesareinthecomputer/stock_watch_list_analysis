@@ -28,8 +28,10 @@ It runs on Databricks Free Edition - serverless, one scheduled job, no
 always-on compute - which makes it cheap to reproduce and a reasonable
 reference for anyone building a small lakehouse on a budget.
 
-**Status.** The pipeline is stable: 19 tasks, daily on a cron, ~18 minutes a
-run. The scoring shown here (methodology v1) is legacy and unvalidated; the
+**Status.** The pipeline is 19 tasks and ~18 minutes a run. Its daily
+schedule has been paused since 2026-11-12 (`pause_status` in
+`databricks.yml`); it still runs by hand. The scoring shown here
+(methodology v1) is legacy and unvalidated; the
 successor lives in the local-first engine (methodology v2: walk-forward
 validated with stated caveats, emitting recorded monthly call rounds since
 2026-08). Direction, 2026-11-09: Databricks becomes a serving layer for what
@@ -204,7 +206,7 @@ setup_catalog
 <details>
 <summary><strong>Scheduling &amp; Data Accumulation</strong></summary>
 
-The pipeline runs **daily after US market close** (10 PM ET, Mon-Fri). NYSE closes at 4 PM ET; yfinance data is typically available by 5-6 PM.
+The pipeline is scheduled **daily after US market close** (10 PM ET, Mon-Fri). The schedule is paused as of 2026-11-12 while the serving design replaces this job; remove `pause_status: PAUSED` in `databricks.yml` to resume it. NYSE closes at 4 PM ET; yfinance data is typically available by 5-6 PM.
 
 | Cadence | Cron | Trade-off |
 |---------|------|-----------|

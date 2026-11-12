@@ -1,6 +1,6 @@
 """Daily data-proof report: can the data be trusted today? (STORY-000013)
 
-    uv run python scripts/data_proof.py        # writes reports/data_proof_<date>.md
+    uv run python scripts/data_proof.py        # writes reports/data_proof_<session>.md
 
 One page, written by the daily cadence after the build, listing each check
 with its count and the symbols it names:
@@ -23,7 +23,7 @@ is always 0: the report informs, the guard that follows decides.
 """
 import os
 import sys
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "src"))
@@ -35,9 +35,8 @@ load_dotenv(os.path.join(ROOT, ".env"))
 
 import duckdb  # noqa: E402
 
-from common.adjustments import max_divergence  # noqa: E402
+from common.adjustments import ADJ_TOLERANCE, divergent  # noqa: E402
 from common.config import TICKERS, BENCHMARK_TICKERS  # noqa: E402
-from common.corporate_actions import splits_for  # noqa: E402
 from common.known_closes import check_known_closes  # noqa: E402
 from common.positions import daily_symbols, held_symbols, load_positions  # noqa: E402
 from common.quality import completed_session_cutoff, last_trading_session  # noqa: E402
@@ -49,8 +48,7 @@ from common.warehouse_meta import bronze_is_traded  # noqa: E402
 WAREHOUSE = os.path.join(ROOT, "warehouse", "market.duckdb")
 REPORTS = os.path.join(ROOT, "reports")
 POSITIONS = os.path.join(ROOT, "knowledge", "POSITIONS.md")
-ADJ_TOLERANCE = 0.02       # the build's gate (scripts/build_local.py)
-WARMUP_ROWS = 200          # below this the build skips the symbol too
+WARMUP_ROWS = 200          # below this the build computes no indicators
 
 
 def _names(items, limit=25):
@@ -131,13 +129,7 @@ def check_adjustment(con):
         f"HAVING COUNT(*) >= {WARMUP_ROWS} ORDER BY symbol").fetchall()]
     ruled = known_defects("adjustment mismatch")
     bad, known = [], []
-    for symbol in symbols:
-        raw = con.execute(
-            "SELECT date, close, adj_close, dividend, _run_id FROM bronze_prices "
-            "WHERE symbol = ? ORDER BY date", [symbol]).df()
-        divergence = max_divergence(raw, splits_for(con, symbol))
-        if divergence <= ADJ_TOLERANCE:
-            continue
+    for symbol, divergence in divergent(con, symbols):
         if symbol in ruled:
             known.append(f"{symbol} {divergence:.1%} (ruled {ruled[symbol]['ruled']})")
         else:
@@ -160,9 +152,17 @@ def run_checks(con, symbols, held, now=None):
     return checks, vintage[3]
 
 
-def render(checks, latest, today):
-    lines = [f"# Data proof - {today}", "",
-             f"Warehouse vintage: bronze through {latest}.", "",
+def report_path(now=None):
+    """The report file for the last completed session. The guard report from
+    the same run is named by that session too, so a run has one date."""
+    session = last_trading_session(completed_session_cutoff(now))
+    return os.path.join(REPORTS, f"data_proof_{session}.md")
+
+
+def render(checks, latest, session, written=None):
+    lines = [f"# Data proof - {session}", "",
+             f"Warehouse vintage: bronze through {latest}."
+             + (f" Written {written}." if written else ""), "",
              "| check | status | detail |", "|---|---|---|"]
     for name, ok, detail in checks:
         lines.append(f"| {name} | {'ok' if ok else 'ATTENTION'} | {detail} |")
@@ -187,10 +187,11 @@ def main():
         checks, latest = run_checks(con, symbols, held)
     finally:
         con.close()
-    today = date.today()
-    text = render(checks, latest, today)
+    path = report_path()
+    session = os.path.basename(path)[len("data_proof_"):-len(".md")]
+    text = render(checks, latest, session,
+                  written=datetime.now().isoformat(timespec="seconds"))
     os.makedirs(REPORTS, exist_ok=True)
-    path = os.path.join(REPORTS, f"data_proof_{today}.md")
     with open(path, "w") as f:
         f.write(text)
     print(text, end="")

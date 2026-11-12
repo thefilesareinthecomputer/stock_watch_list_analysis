@@ -198,9 +198,13 @@ resources:
             python_file: ./src/transforms/build_gold_congressional.py
           environment_key: "default"
 
+      # Paused 2026-11-12: this v1 job is legacy. Databricks serves what the
+      # local engine produces (README "Status"); the job stays defined, and
+      # runnable by hand, until the serving design replaces it.
       schedule:
         quartz_cron_expression: "0 0 22 ? * MON-FRI"
         timezone_id: America/New_York
+        pause_status: PAUSED
 
       email_notifications:
         on_failure:

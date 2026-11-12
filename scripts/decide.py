@@ -109,6 +109,13 @@ def build_report(con, rounds, trades, today):
 
     lines += ["", "## Advisory - UNVALIDATED SCREEN, not calls"]
     if has_table(con, "gold_line_of_sight"):
+        # The screen is rebuilt monthly (backfill_universe.py), not by the
+        # daily build, so its age is stated before its names.
+        as_of = con.execute(
+            "SELECT MAX(as_of_date) FROM gold_line_of_sight").fetchone()[0]
+        if as_of is not None:
+            lines.append(f"Screen as of {as_of}, {(today - as_of).days} "
+                         "days old.")
         emerging = [row[0] for row in con.execute(
             "SELECT symbol FROM gold_line_of_sight WHERE emerging "
             "ORDER BY mom_pct DESC").fetchall()]
