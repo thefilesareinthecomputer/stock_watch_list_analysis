@@ -11,8 +11,9 @@ graph is `PROJECTS/stocks/markdown-kg/`, and its deliverables are in
 through the graph rather than reading the notes whole.
 
 ## Working agreement
-- User runs all installs and git commands. Assistant writes to requirements files
-  and **stages** git commands for approval - never commits or pushes directly.
+- User runs all installs. Assistant writes to requirements files.
+- Git: the assistant commits on `develop` as work completes and pushes
+  `develop` at wrap-up. `main` advances only on the user's word.
 - Prefer architectural polish over more indicators / ML / tickers.
 - Indicator correctness matters: match industry-standard formulas with citations.
 - Data truth: the app always uses real, current data. Never build on an
